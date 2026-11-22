@@ -17,6 +17,8 @@ import {
   Store,
   UserCircle,
   CheckCircle2,
+  AlertTriangle,
+  MessageSquare,
 } from 'lucide-react'
 import { INITIAL_STATE, ROLES, BRANCHES } from './data/seedData'
 import { LABELS } from './data/i18n'
@@ -25,6 +27,8 @@ import NewRequestView from './components/NewRequestView'
 import PurchasingView from './components/PurchasingView'
 import PriceReviewView from './components/PriceReviewView'
 import ReceivingView from './components/ReceivingView'
+import DailyPeriodicView from './components/DailyPeriodicView'
+import ShortagesView from './components/ShortagesView'
 import {
   MyRequestsView,
   TransfersView,
@@ -35,7 +39,7 @@ import {
   StockChecksView,
 } from './components/OperationsTabs'
 
-const STORAGE_KEY = 'lc_purchasing_v2_2_state_r2'
+const STORAGE_KEY = 'lc_purchasing_v2_2_state_r3'
 
 function loadState() {
   try {
@@ -611,8 +615,80 @@ export default function App() {
     notify(`Note added to ${orderId}`)
   }
 
+  const handleSubmitDaily = ({ branchId, date, department, requestedBy, items }) => {
+    const id = `DR-${202 + state.dailyRequests.length}`
+    setState((prev) => ({
+      ...prev,
+      dailyRequests: [
+        {
+          id,
+          branchId,
+          date,
+          department,
+          requestedBy,
+          sentTo: 'Cost Control (WhatsApp)',
+          status: 'Sent to Cost Control',
+          items,
+        },
+        ...prev.dailyRequests,
+      ],
+      auditLog: appendAudit(prev, branchId, `Daily Request ${id} (${department}) saved with ${items.length} items`),
+    }))
+    notify(`Daily Request ${id} saved`)
+  }
+
+  const handleSavePeriodic = ({ branchId, id, date, department, items }) => {
+    const newId = id || `PER-00${state.periodicRequests.length + 1}`
+    setState((prev) => ({
+      ...prev,
+      periodicRequests: [
+        {
+          id: newId,
+          branchId,
+          date,
+          department,
+          status: 'Waiting Restaurant Manager',
+          step1: { approved: false, name: '', sig: '', time: '' },
+          step2: { approved: false, name: '', sig: '', time: '' },
+          step3: { approved: false, name: '', sig: '', time: '' },
+          items,
+        },
+        ...prev.periodicRequests,
+      ],
+      auditLog: appendAudit(prev, branchId, `Periodic Request ${newId} created (${items.length} items)`),
+    }))
+    notify(`Periodic Request ${newId} saved`)
+    return newId
+  }
+
+  const handleApprovePeriodicStep = (perId, stepNum, name, sig) => {
+    const time = nowStr().slice(11, 16)
+    setState((prev) => ({
+      ...prev,
+      periodicRequests: prev.periodicRequests.map((p) => {
+        if (p.id !== perId) return p
+        const next = { ...p }
+        if (stepNum === 1) {
+          next.step1 = { approved: true, name, sig, time }
+          next.status = 'Waiting Cost Control'
+        } else if (stepNum === 2) {
+          next.step2 = { approved: true, name, sig, time }
+          next.status = 'Waiting Owner Final Approval'
+        } else if (stepNum === 3) {
+          next.step3 = { approved: true, name, sig, time }
+          next.status = 'Fully Approved'
+        }
+        return next
+      }),
+      auditLog: appendAudit(prev, branchFilter, `Periodic ${perId} Step ${stepNum} approved by ${name}`),
+    }))
+    notify(`Step ${stepNum} approved for ${perId}`)
+  }
+
   const allNavItems = [
     { id: 'overview', label: t.overview, icon: Home },
+    { id: 'daily_periodic', label: role.id === 'staff' ? (lang === 'ar' ? 'طلب يومي (Daily)' : 'Daily Request') : role.id === 'owner' ? (lang === 'ar' ? 'سجل اليومي والدوري' : 'Daily & Periodic') : (lang === 'ar' ? 'يومي ودوري' : 'Daily & Periodic'), icon: MessageSquare },
+    { id: 'shortages', label: lang === 'ar' ? 'النواقص (وصل أقل)' : 'Shortages', icon: AlertTriangle },
     { id: 'new_request', label: t.newRequest, icon: PlusSquare },
     { id: 'my_requests', label: role.id === 'owner' ? (lang === 'ar' ? 'الطلبات والأوامر' : 'Requests & Orders') : t.myRequests, icon: FileText },
     { id: 'purchasing', label: t.purchasing, icon: ShoppingCart },
@@ -721,6 +797,20 @@ export default function App() {
               onNavigate={handleNavigate}
               onApproveOwnerLine={handleApproveOwnerLine}
             />
+          )}
+          {activeTab === 'daily_periodic' && (
+            <DailyPeriodicView
+              state={state}
+              branchFilter={branchFilter}
+              role={role}
+              lang={lang}
+              onSubmitDaily={handleSubmitDaily}
+              onSavePeriodic={handleSavePeriodic}
+              onApprovePeriodicStep={handleApprovePeriodicStep}
+            />
+          )}
+          {activeTab === 'shortages' && (
+            <ShortagesView state={state} branchFilter={branchFilter} role={role} lang={lang} />
           )}
           {activeTab === 'new_request' && (
             <NewRequestView

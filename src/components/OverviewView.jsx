@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { CheckCircle2, AlertTriangle, ShoppingBag, Clock } from 'lucide-react'
 import { BRANCHES } from '../data/seedData'
 
@@ -6,6 +6,7 @@ export default function OverviewView({ state, branchFilter, role, lang, t, onNav
   const canSeePrices = role.canViewPrices
   const branchObj = BRANCHES.find((x) => x.id === branchFilter) || BRANCHES[0]
   const branchTitle = lang === 'ar' ? branchObj.nameAr : branchObj.name
+  const [orderTypeFilter, setOrderTypeFilter] = useState('All') // All | Daily | Periodic
 
   const restaurantLines = state.prs
     .filter((pr) => pr.branchId === branchObj.id)
@@ -152,57 +153,68 @@ export default function OverviewView({ state, branchFilter, role, lang, t, onNav
         </div>
       </div>
 
-      {/* Recent orders for this restaurant only */}
+      {/* Daily & Periodic History for this restaurant only */}
       <div className="card">
         <div className="card-title">
-          <span>{lang === 'ar' ? `آخر طلبات ${branchTitle}` : `Recent orders · ${branchTitle}`}</span>
+          <span>{lang === 'ar' ? `سجل الطلبات اليومية والدورية · ${branchTitle}` : `Daily & Periodic History · ${branchTitle}`}</span>
+          <div className="seg-group">
+            {['All', 'Daily', 'Periodic'].map((f) => (
+              <button key={f} className={`seg-btn ${orderTypeFilter === f ? 'active' : ''}`} onClick={() => setOrderTypeFilter(f)}>
+                {f}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="table-wrap" style={{ border: 'none' }}>
           <table>
             <thead>
               <tr>
-                <th>{lang === 'ar' ? 'الصنف' : 'Item'}</th>
-                <th>{lang === 'ar' ? 'الكمية' : 'Quantity'}</th>
-                <th>{lang === 'ar' ? 'المورد' : 'Supplier'}</th>
-                {canSeePrices && <th>{lang === 'ar' ? 'الإجمالي' : 'Total'}</th>}
-                <th>{lang === 'ar' ? 'الحالة' : 'Status'}</th>
+                <th>Type</th>
+                <th>ID & Date</th>
+                <th>Department</th>
+                <th>Items Ordered (with Poster Stock)</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
-              {branchPOs.length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>
-                    {lang === 'ar' ? 'لا توجد طلبات مسجلة بعد' : 'No orders yet for this restaurant.'}
+              {[
+                ...(orderTypeFilter !== 'Periodic'
+                  ? state.dailyRequests
+                      .filter((d) => d.branchId === branchObj.id)
+                      .map((d) => ({
+                        kind: 'Daily',
+                        id: d.id,
+                        date: d.date,
+                        dept: `${d.department} (${d.requestedBy})`,
+                        itemsText: d.items.map((i) => `${i.name}: ${i.qty} ${i.unit || ''} (Stock: ${i.stock})`).join(' · '),
+                        status: d.status,
+                      }))
+                  : []),
+                ...(orderTypeFilter !== 'Daily'
+                  ? state.periodicRequests
+                      .filter((p) => p.branchId === branchObj.id)
+                      .map((p) => ({
+                        kind: 'Periodic',
+                        id: p.id,
+                        date: p.date,
+                        dept: p.department,
+                        itemsText: p.items.map((i) => `${i.name}: ${i.qty} (Stock: ${i.stock})`).join(' · '),
+                        status: p.status,
+                      }))
+                  : []),
+              ].map((row) => (
+                <tr key={row.id} className="clickable" onClick={() => onNavigate('daily_periodic')}>
+                  <td>
+                    <span className={`pill ${row.kind === 'Daily' ? 'pill-green' : 'pill-blue'}`}>{row.kind}</span>
+                  </td>
+                  <td><strong>{row.id}</strong><div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.date}</div></td>
+                  <td>{row.dept}</td>
+                  <td style={{ fontSize: 13 }}>{row.itemsText}</td>
+                  <td>
+                    <span className={`pill ${row.status.includes('Waiting') ? 'pill-amber' : 'pill-green'}`}>{row.status}</span>
                   </td>
                 </tr>
-              ) : (
-                branchPOs.map((po) => (
-                  <tr key={po.id} className="clickable" onClick={() => onNavigate('my_requests')}>
-                    <td>
-                      <div className="item-cell">
-                        <span style={{ fontSize: 20 }}>{po.emoji}</span>
-                        <strong>{lang === 'ar' ? po.itemNameAr || po.itemName : po.itemName}</strong>
-                      </div>
-                    </td>
-                    <td>{po.orderedQty} {po.unit}</td>
-                    <td>{po.supplier}</td>
-                    {canSeePrices && <td><strong>{po.invoiceAmount.toLocaleString()} EGP</strong></td>}
-                    <td>
-                      <span
-                        className={`pill ${
-                          po.status === 'Received'
-                            ? 'pill-green'
-                            : po.status === 'Part received'
-                            ? 'pill-amber'
-                            : 'pill-blue'
-                        }`}
-                      >
-                        {po.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
