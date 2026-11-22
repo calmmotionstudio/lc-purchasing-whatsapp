@@ -6,7 +6,8 @@ const STORAGE_KEY = 'lc_wa_purchasing_v3'
 const SIMPLE_ROLES = [
   { id: 'staff', labelEn: 'Kitchen / Bar', labelAr: 'المطبخ / البار', tabs: ['daily'] },
   { id: 'manager', labelEn: 'Restaurant Manager', labelAr: 'مدير المطعم', tabs: ['periodic', 'daily', 'shortages'] },
-  { id: 'cost_control', labelEn: 'Cost Control', labelAr: 'مراقبة التكاليف', tabs: ['daily', 'periodic', 'history', 'shortages'] },
+  { id: 'cost_office', labelEn: 'Cost Control Office', labelAr: 'مكتب مراقبة التكاليف', tabs: ['daily', 'periodic', 'history', 'shortages'] },
+  { id: 'cost_control', labelEn: 'Cost Control Manager', labelAr: 'مدير مراقبة التكاليف', tabs: ['daily', 'periodic', 'history', 'shortages'] },
   { id: 'owner', labelEn: 'Owner · Lyudmyla', labelAr: 'المالكة · ليودميلا', tabs: ['periodic', 'history', 'shortages'] },
 ]
 
@@ -284,14 +285,25 @@ export default function App() {
           ? d
           : {
               ...d,
-              status: actionType === 'office' ? 'Sent to Cost Control Manager Office' : 'Approved by Cost Control',
+              status:
+                actionType === 'office_ack'
+                  ? 'Reviewed by Cost Control Office'
+                  : actionType === 'office_fwd'
+                  ? 'Forwarded to Cost Control Manager'
+                  : actionType === 'office'
+                  ? 'Sent to Cost Control Manager Office'
+                  : 'Approved by Cost Control Manager',
             }
       ),
     }))
     notify(
-      actionType === 'office'
+      actionType === 'office_ack'
+        ? `👁️ ${dailyId} marked reviewed by Cost Control Office`
+        : actionType === 'office_fwd'
+        ? `✅ ${dailyId} forwarded to Cost Control Manager`
+        : actionType === 'office'
         ? `📱 ${dailyId} sent to Cost Control Manager Office`
-        : `✅ ${dailyId} approved by Cost Control`
+        : `✅ ${dailyId} approved by Cost Control Manager`
     )
   }
 
@@ -369,13 +381,13 @@ export default function App() {
         {role.tabs.includes('daily') && (
           <button className={activeTab === 'daily' ? 'active' : ''} onClick={() => setActiveTab('daily')}>
             🥬 {isAr ? 'طلب يومي | Daily' : 'Daily Request'}
-            <small>{isAr ? 'خضار - فاكهة - ستوك يومي (Kitchen / Bar / Cost Control)' : 'Kitchen · Bar · Cost Control (No Owner)'}</small>
+            <small>{isAr ? 'خضار - فاكهة - ستوك يومي (Kitchen / Bar / Cost Control)' : 'Kitchen · Bar · Cost Control Office & Manager (No Owner)'}</small>
           </button>
         )}
         {role.tabs.includes('periodic') && (
           <button className={activeTab === 'periodic' ? 'active' : ''} onClick={() => setActiveTab('periodic')}>
             🍽️ {isAr ? 'مشتريات دورية | Periodic' : 'Periodic Purchases'}
-            <small>{isAr ? 'China · Glass · Silver · معدات (Manager / Cost Control / Owner)' : 'Manager · Cost Control · Owner'}</small>
+            <small>{isAr ? 'China · Glass · Silver · معدات (Manager / Cost Control / Owner)' : 'Manager · Cost Control Manager · Owner'}</small>
           </button>
         )}
         {role.tabs.includes('history') && (
@@ -399,19 +411,28 @@ export default function App() {
           <div>
             <h2 style={{ marginTop: 0 }}>🥬 {isAr ? `طلب يومي · ${branchTitle}` : `Daily Purchase Request · ${branchTitle}`}</h2>
 
-            {/* Cost Control Daily Approval Queue */}
-            {roleId === 'cost_control' && (
+            {/* Cost Control Manager & Cost Control Office: REVIEW / APPROVE ONLY (NO ORDER CREATION!) */}
+            {(roleId === 'cost_control' || roleId === 'cost_office') ? (
               <div className="wa-settings" style={{ background: '#f5f7f4', borderColor: '#0f3d2e' }}>
-                <h3>✅ {isAr ? 'مراجعة الطلبات اليومية (Cost Control)' : 'Daily Requests Pending Cost Control Review'}</h3>
+                <h3>
+                  {roleId === 'cost_office'
+                    ? (isAr ? '👁️ مراجعة مكتب مراقبة التكاليف (للاطلاع أو الاعتماد فقط — بدون إنشاء طلبات)' : '👁️ Cost Control Office — Review & Acknowledge Daily Orders (No Ordering)')
+                    : (isAr ? '✅ مراجعة مدير مراقبة التكاليف (للاطلاع أو الاعتماد فقط — بدون إنشاء طلبات)' : '✅ Cost Control Manager — Review & Approve Daily Orders (No Ordering)')}
+                </h3>
+                <p style={{ fontSize: 13, color: '#555', marginTop: 0 }}>
+                  {isAr
+                    ? 'هنا بتشوف الطلبات اللي بعتها المطبخ أو البار أو مدير المطعم مع الكمية الموجودة في بوستر.'
+                    : 'Orders submitted by Kitchen, Bar, or Restaurant Manager with current Poster stock shown per item.'}
+                </p>
                 <div className="wa-table-wrap" style={{ marginTop: 8 }}>
                   <table>
                     <thead>
                       <tr>
                         <th>ID / Date</th>
-                        <th>Department</th>
-                        <th>Items & Poster Stock</th>
+                        <th>From (Dept)</th>
+                        <th>Ordered Items & Current Poster Stock</th>
                         <th>Status</th>
-                        <th>Cost Control Action</th>
+                        <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -420,30 +441,60 @@ export default function App() {
                         .map((d) => (
                           <tr key={d.id}>
                             <td><strong>{d.id}</strong><div style={{ fontSize: 12, color: '#666' }}>{d.date}</div></td>
-                            <td>{d.department} ({d.requestedBy})</td>
-                            <td>{d.items.map((i) => `${i.name}: ${i.qty} (Stock: ${i.stock})`).join(' · ')}</td>
-                            <td><span className={`wa-badge ${d.status.includes('Approved') ? 'green' : 'amber'}`}>{d.status}</span></td>
+                            <td>{d.department}<div style={{ fontSize: 12, color: '#666' }}>{d.requestedBy}</div></td>
                             <td>
-                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                <button
-                                  className="wa-btn"
-                                  style={{ padding: '6px 10px', fontSize: 12 }}
-                                  onClick={() => approveDailyRequest(d.id, 'approve')}
-                                >
-                                  ✅ Approve
-                                </button>
-                                <button
-                                  className="wa-btn whatsapp"
-                                  style={{ padding: '6px 10px', fontSize: 12 }}
-                                  onClick={() => {
-                                    approveDailyRequest(d.id, 'office')
-                                    const text = `🥬 Daily Request ${d.id} (${branchTitle} - ${d.department})\n${d.items.map((i) => `- ${i.name}: ${i.qty} (Stock: ${i.stock})`).join('\n')}`
-                                    if (dailyPhones.office) sendWhatsApp(dailyPhones.office, text)
-                                  }}
-                                >
-                                  📱 Send to Cost Control Manager Office
-                                </button>
-                              </div>
+                              {d.items.map((i, idx) => (
+                                <div key={idx} style={{ marginBottom: 3 }}>
+                                  <strong>{i.name}</strong>: Order <strong>{i.qty}</strong> ·{' '}
+                                  <span className="wa-badge green">In Stock: {i.stock}</span>
+                                </div>
+                              ))}
+                            </td>
+                            <td><span className={`wa-badge ${d.status.includes('Approved') || d.status.includes('Reviewed') ? 'green' : 'amber'}`}>{d.status}</span></td>
+                            <td>
+                              {roleId === 'cost_office' ? (
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                  <button
+                                    className="wa-btn ghost"
+                                    style={{ padding: '6px 10px', fontSize: 12 }}
+                                    onClick={() => approveDailyRequest(d.id, 'office_ack')}
+                                  >
+                                    👁️ Acknowledge
+                                  </button>
+                                  <button
+                                    className="wa-btn whatsapp"
+                                    style={{ padding: '6px 10px', fontSize: 12 }}
+                                    onClick={() => {
+                                      approveDailyRequest(d.id, 'office_fwd')
+                                      const text = `🥬 Daily Request ${d.id} (${branchTitle} - ${d.department})\n${d.items.map((i) => `- ${i.name}: ${i.qty} (Stock: ${i.stock})`).join('\n')}`
+                                      if (dailyPhones.costMgr) sendWhatsApp(dailyPhones.costMgr, text)
+                                    }}
+                                  >
+                                    📱 Forward to Cost Control Manager
+                                  </button>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                  <button
+                                    className="wa-btn"
+                                    style={{ padding: '6px 10px', fontSize: 12 }}
+                                    onClick={() => approveDailyRequest(d.id, 'approve')}
+                                  >
+                                    ✅ Approve
+                                  </button>
+                                  <button
+                                    className="wa-btn whatsapp"
+                                    style={{ padding: '6px 10px', fontSize: 12 }}
+                                    onClick={() => {
+                                      approveDailyRequest(d.id, 'office')
+                                      const text = `🥬 Daily Request ${d.id} (${branchTitle} - ${d.department})\n${d.items.map((i) => `- ${i.name}: ${i.qty} (Stock: ${i.stock})`).join('\n')}`
+                                      if (dailyPhones.office) sendWhatsApp(dailyPhones.office, text)
+                                    }}
+                                  >
+                                    📱 Send to Cost Control Manager Office
+                                  </button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -451,7 +502,28 @@ export default function App() {
                   </table>
                 </div>
               </div>
-            )}
+            ) : (
+              <>
+                {/* Poster Stock Preview BEFORE Ordering (Kitchen / Bar / Manager) */}
+                <div className="wa-settings" style={{ background: '#f5f7f4', borderColor: '#0f3d2e' }}>
+                  <h3>📦 {isAr ? `الموجود حالياً في مخزن ${branchTitle} (Poster) قبل الطلب` : `Current Poster Stock in ${branchTitle} (Check Before Ordering)`}</h3>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                    {stockOptions.slice(0, 10).map((s, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        className="wa-btn ghost"
+                        style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: '1px solid #d5d1c8' }}
+                        onClick={() => {
+                          setDailyRows((p) => [...p, { name: s.name, qty: '1', notes: '' }])
+                          notify(`Added ${s.name} (Stock: ${s.stock} ${s.unit})`)
+                        }}
+                      >
+                        + {s.name}: <strong style={{ color: '#0f3d2e' }}>{s.stock} {s.unit}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
             <div className="wa-settings">
               <h3>📱 {isAr ? 'أرقام الطلب اليومي - Daily Only (من غير Owner)' : 'Daily WhatsApp Numbers (No Owner in Daily)'}</h3>
@@ -588,6 +660,8 @@ export default function App() {
                 </button>
               </div>
             </div>
+              </>
+            )}
           </div>
         )}
 
@@ -623,8 +697,27 @@ export default function App() {
               </div>
             </div>
 
-            {roleId !== 'owner' && (
+            {roleId === 'manager' && (
               <>
+                <div className="wa-settings" style={{ background: '#f5f7f4', borderColor: '#0f3d2e' }}>
+                  <h3>📦 {isAr ? `الموجود حالياً في ${branchTitle} (Poster) قبل الطلب الدوري` : `Current Poster Stock in ${branchTitle} (Check Before Ordering)`}</h3>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                    {CURATED_CATALOG.filter((c) => c.category === 'Non-food').slice(0, 10).map((s, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        className="wa-btn ghost"
+                        style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: '1px solid #d5d1c8' }}
+                        onClick={() => {
+                          setPerRows((p) => [...p, { name: s.name, specs: s.spec, category: s.subType || 'China', qty: '1', price: String(s.lastPaidPoster || 0) }])
+                          notify(`Added ${s.name} (Stock: ${s.posterStock[branchId] ?? 0} ${s.unit})`)
+                        }}
+                      >
+                        + {s.name}: <strong style={{ color: '#0f3d2e' }}>{s.posterStock[branchId] ?? 0} {s.unit}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="wa-grid">
                   <div className="wa-field">
                     <label>Request No.</label>
@@ -725,7 +818,7 @@ export default function App() {
                 </div>
 
                 {[
-                  { num: 1, title: '1 - Restaurant Manager', data: activePer.step1, unlocked: true, canAct: roleId === 'manager', waPhone: perPhones.cost, waLabel: 'Open WhatsApp & Send to Cost Control' },
+                  { num: 1, title: '1 - Restaurant Manager', data: activePer.step1, unlocked: true, canAct: roleId === 'manager', waPhone: perPhones.cost, waLabel: 'Open WhatsApp & Send to Cost Control Manager' },
                   { num: 2, title: '2 - Cost Control Manager', data: activePer.step2, unlocked: activePer.step1.approved, canAct: roleId === 'cost_control', waPhone: perPhones.owner, waLabel: 'Open WhatsApp & Send to Owner' },
                   { num: 3, title: '3 - Owner (Lyudmyla)', data: activePer.step3, unlocked: activePer.step2.approved, canAct: roleId === 'owner', waPhone: perPhones.manager, waLabel: 'Send Final Confirmation to Manager' },
                 ].map((st) => (
