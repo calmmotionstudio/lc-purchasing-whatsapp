@@ -1188,7 +1188,7 @@ export const INITIAL_STATE = {
       owner: 'Mona · Purchasing',
       due: 'Today 18:00',
       nextAction: 'Keep 0.5 kg remaining delivery open & confirm credit note',
-      status: 'Open',
+      status: 'Pending',
     },
   ],
   stockChecks: [
@@ -1359,8 +1359,8 @@ export const INITIAL_STATE = {
       step2: { approved: true, name: 'Cost Control', sig: 'CC-Lead', time: '13:45' },
       step3: { approved: false, name: '', sig: '', time: '' },
       items: [
-        { name: 'Dinner plate 27 cm', specs: 'TW-027 Porcelain', category: 'China', stock: 130, qty: 15, price: 150 },
-        { name: 'Outdoor heater', specs: 'EQ-014 13 kW', category: 'Equipment', stock: 2, qty: 1, price: 15000 },
+        { name: 'Dinner plate 27 cm', specs: 'TW-027 Porcelain', category: 'China', inventory: 130, qty: 15 },
+        { name: 'Outdoor heater', specs: 'EQ-014 13 kW', category: 'Equipment', inventory: 2, qty: 1 },
       ],
     },
     {
@@ -1368,13 +1368,13 @@ export const INITIAL_STATE = {
       branchId: 'cairo',
       date: '2026-11-22',
       department: 'Kitchen',
-      status: 'Waiting Cost Control',
+      status: 'Waiting Cost Control Manager',
       step1: { approved: true, name: 'Cairo Manager', sig: 'M.Ali', time: '10:05' },
       step2: { approved: false, name: '', sig: '', time: '' },
       step3: { approved: false, name: '', sig: '', time: '' },
       items: [
-        { name: 'Nachos Skillet', specs: 'Cast iron', category: 'Kitchen Tools', stock: 8, qty: 10, price: 320 },
-        { name: 'Black Soup Bowl', specs: 'Ceramic', category: 'China', stock: 3, qty: 5, price: 110 },
+        { name: 'Nachos Skillet', specs: 'Cast iron', category: 'Kitchen Tools', inventory: 8, qty: 10 },
+        { name: 'Black Soup Bowl', specs: 'Ceramic', category: 'China', inventory: 3, qty: 5 },
       ],
     },
   ],
