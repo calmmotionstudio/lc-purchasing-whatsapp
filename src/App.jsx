@@ -253,38 +253,50 @@ export default function App() {
     notify(isAr ? `✅ تم اعتماد المرحلة ${stepNum}` : `✅ Step ${stepNum} approved`)
   }
 
-  // ============ HISTORY & SHORTAGES ============
-  const [historyFilter, setHistoryFilter] = useState('All')
-  const [shortForm, setShortForm] = useState({ refDoc: 'DR-201', itemName: 'Tomatoes', ordered: '10', arrived: '8', unit: 'kg', reason: 'Supplier short delivery' })
-
-  const addShortage = () => {
-    const ord = Number(shortForm.ordered || 0)
-    const arr = Number(shortForm.arrived || 0)
-    if (!shortForm.itemName.trim() || ord <= arr) return
-    const id = `ISS-${402 + state.discrepancies.length}`
+  const rejectPeriodicStep = (stepNum) => {
+    if (!activePer) return
+    const inp = stepInputs[stepNum]
+    const reason = inp.notes?.trim() || (isAr ? 'مرفوض' : 'Rejected')
+    const time = new Date().toTimeString().slice(0, 5)
     setState((prev) => ({
       ...prev,
-      discrepancies: [
-        {
-          id,
-          branchId,
-          type: 'Arrived Less',
-          refDoc: shortForm.refDoc,
-          itemName: shortForm.itemName.trim(),
-          expectedQty: ord,
-          actualQty: arr,
-          unit: shortForm.unit,
-          unmatchedEgp: 0,
-          owner: 'Cost Control / Purchasing',
-          due: 'Tomorrow 10:00',
-          nextAction: shortForm.reason,
-          status: 'Open',
-        },
-        ...prev.discrepancies,
-      ],
+      periodicRequests: prev.periodicRequests.map((p) => {
+        if (p.id !== activePer.id) return p
+        const next = { ...p }
+        next.status = stepNum === 3 ? `Rejected by Owner (${reason})` : `Rejected by Cost Control (${reason})`
+        if (stepNum === 2) {
+          next.step2 = { approved: false, rejected: true, name: inp.name.trim() || 'Cost Control', notes: reason, time }
+        }
+        if (stepNum === 3) {
+          next.step3 = { approved: false, rejected: true, name: inp.name.trim() || 'Owner', notes: reason, time }
+        }
+        return next
+      }),
     }))
-    notify(isAr ? `تم تسجيل عجز ${id}` : `Shortage ${id} recorded`)
+    notify(isAr ? `❌ تم رفض الطلب ${activePer.id}` : `❌ ${activePer.id} rejected`)
   }
+
+  const approveDailyRequest = (dailyId, actionType) => {
+    setState((prev) => ({
+      ...prev,
+      dailyRequests: prev.dailyRequests.map((d) =>
+        d.id !== dailyId
+          ? d
+          : {
+              ...d,
+              status: actionType === 'office' ? 'Sent to Cost Control Manager Office' : 'Approved by Cost Control',
+            }
+      ),
+    }))
+    notify(
+      actionType === 'office'
+        ? `📱 ${dailyId} sent to Cost Control Manager Office`
+        : `✅ ${dailyId} approved by Cost Control`
+    )
+  }
+
+  // ============ HISTORY ============
+  const [historyFilter, setHistoryFilter] = useState('All')
 
   const resolveShortage = (id) => {
     setState((prev) => ({
@@ -386,6 +398,60 @@ export default function App() {
         {activeTab === 'daily' && (
           <div>
             <h2 style={{ marginTop: 0 }}>🥬 {isAr ? `طلب يومي · ${branchTitle}` : `Daily Purchase Request · ${branchTitle}`}</h2>
+
+            {/* Cost Control Daily Approval Queue */}
+            {roleId === 'cost_control' && (
+              <div className="wa-settings" style={{ background: '#f5f7f4', borderColor: '#0f3d2e' }}>
+                <h3>✅ {isAr ? 'مراجعة الطلبات اليومية (Cost Control)' : 'Daily Requests Pending Cost Control Review'}</h3>
+                <div className="wa-table-wrap" style={{ marginTop: 8 }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID / Date</th>
+                        <th>Department</th>
+                        <th>Items & Poster Stock</th>
+                        <th>Status</th>
+                        <th>Cost Control Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.dailyRequests
+                        .filter((d) => d.branchId === branchId)
+                        .map((d) => (
+                          <tr key={d.id}>
+                            <td><strong>{d.id}</strong><div style={{ fontSize: 12, color: '#666' }}>{d.date}</div></td>
+                            <td>{d.department} ({d.requestedBy})</td>
+                            <td>{d.items.map((i) => `${i.name}: ${i.qty} (Stock: ${i.stock})`).join(' · ')}</td>
+                            <td><span className={`wa-badge ${d.status.includes('Approved') ? 'green' : 'amber'}`}>{d.status}</span></td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                <button
+                                  className="wa-btn"
+                                  style={{ padding: '6px 10px', fontSize: 12 }}
+                                  onClick={() => approveDailyRequest(d.id, 'approve')}
+                                >
+                                  ✅ Approve
+                                </button>
+                                <button
+                                  className="wa-btn whatsapp"
+                                  style={{ padding: '6px 10px', fontSize: 12 }}
+                                  onClick={() => {
+                                    approveDailyRequest(d.id, 'office')
+                                    const text = `🥬 Daily Request ${d.id} (${branchTitle} - ${d.department})\n${d.items.map((i) => `- ${i.name}: ${i.qty} (Stock: ${i.stock})`).join('\n')}`
+                                    if (dailyPhones.office) sendWhatsApp(dailyPhones.office, text)
+                                  }}
+                                >
+                                  📱 Send to Cost Control Manager Office
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             <div className="wa-settings">
               <h3>📱 {isAr ? 'أرقام الطلب اليومي - Daily Only (من غير Owner)' : 'Daily WhatsApp Numbers (No Owner in Daily)'}</h3>
@@ -687,8 +753,19 @@ export default function App() {
                             <input placeholder="Optional" value={stepInputs[st.num].notes} onChange={(e) => setStepInputs((p) => ({ ...p, [st.num]: { ...p[st.num], notes: e.target.value } }))} />
                           </div>
                         </div>
-                        <div style={{ marginTop: 10 }}>
-                          <button className="wa-btn" onClick={() => approvePeriodicStep(st.num)}>✅ Approve</button>
+                        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button className="wa-btn" onClick={() => approvePeriodicStep(st.num)}>
+                            ✅ {st.num === 3 ? (isAr ? 'موافقة نهائية' : 'Confirm / Approve') : 'Approve'}
+                          </button>
+                          {(st.num === 2 || st.num === 3) && (
+                            <button
+                              className="wa-btn ghost"
+                              style={{ background: '#fee4e2', color: '#b42318' }}
+                              onClick={() => rejectPeriodicStep(st.num)}
+                            >
+                              ❌ {isAr ? 'رفض الطلب' : 'Reject / Decline'}
+                            </button>
+                          )}
                         </div>
                       </>
                     )}
@@ -786,41 +863,15 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= TAB 4: SHORTAGES (ARRIVED LESS) ================= */}
+        {/* ================= TAB 4: SHORTAGES (ARRIVED LESS - FACTUAL ONLY) ================= */}
         {activeTab === 'shortages' && (
           <div>
-            <h2 style={{ marginTop: 0 }}>⚠️ {isAr ? `وصل أقل من المطلوب · ${branchTitle}` : `Arrived Less Than Ordered (Shortages) · ${branchTitle}`}</h2>
-
-            {(roleId === 'manager' || roleId === 'cost_control') && (
-              <div className="wa-settings" style={{ background: '#fff9ee', borderColor: '#e8a020' }}>
-                <h3 style={{ color: '#9a4d06' }}>➕ {isAr ? 'تسجيل صنف وصل أقل من المطلوب' : 'Report Item Arrived Less Than Ordered'}</h3>
-                <div className="wa-grid">
-                  <div className="wa-field">
-                    <label>Order #</label>
-                    <input value={shortForm.refDoc} onChange={(e) => setShortForm((p) => ({ ...p, refDoc: e.target.value }))} />
-                  </div>
-                  <div className="wa-field">
-                    <label>Item</label>
-                    <input list="poster-stock-datalist" value={shortForm.itemName} onChange={(e) => setShortForm((p) => ({ ...p, itemName: e.target.value }))} />
-                  </div>
-                  <div className="wa-field">
-                    <label>Ordered Qty</label>
-                    <input type="number" value={shortForm.ordered} onChange={(e) => setShortForm((p) => ({ ...p, ordered: e.target.value }))} />
-                  </div>
-                  <div className="wa-field">
-                    <label>Arrived Qty</label>
-                    <input type="number" value={shortForm.arrived} onChange={(e) => setShortForm((p) => ({ ...p, arrived: e.target.value }))} />
-                  </div>
-                  <div className="wa-field">
-                    <label>Reason / Note</label>
-                    <input value={shortForm.reason} onChange={(e) => setShortForm((p) => ({ ...p, reason: e.target.value }))} />
-                  </div>
-                </div>
-                <button className="wa-btn amber" style={{ marginTop: 10 }} onClick={addShortage}>
-                  Save Shortage
-                </button>
-              </div>
-            )}
+            <h2 style={{ marginTop: 0 }}>⚠️ {isAr ? `وصل أقل من المطلوب · ${branchTitle}` : `Arrived Less Than Ordered (Factual) · ${branchTitle}`}</h2>
+            <p style={{ color: '#666', fontSize: 13.5, marginTop: 4 }}>
+              {isAr
+                ? 'عرض فعلي للأصناف التي وصلت بكمية أقل من المطلوب (بدون إدخال يدوي).'
+                : 'Factual view of items that actually arrived in a smaller quantity than ordered (no manual entry).'}
+            </p>
 
             <div className="wa-table-wrap">
               <table>
