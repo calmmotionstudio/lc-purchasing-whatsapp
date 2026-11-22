@@ -1,45 +1,14 @@
-import React, { useState, useEffect } from 'react'
-import {
-  Home,
-  ShoppingCart,
-  Tag,
-  Truck,
-  History,
-  PlusSquare,
-  FileText,
-  ClipboardList,
-  ArrowRightLeft,
-  Layers,
-  Database,
-  Calculator,
-  Menu,
-  RotateCcw,
-  Store,
-  UserCircle,
-  CheckCircle2,
-  AlertTriangle,
-  MessageSquare,
-} from 'lucide-react'
-import { INITIAL_STATE, ROLES, BRANCHES } from './data/seedData'
-import { LABELS } from './data/i18n'
-import OverviewView from './components/OverviewView'
-import NewRequestView from './components/NewRequestView'
-import PurchasingView from './components/PurchasingView'
-import PriceReviewView from './components/PriceReviewView'
-import ReceivingView from './components/ReceivingView'
-import DailyPeriodicView from './components/DailyPeriodicView'
-import ShortagesView from './components/ShortagesView'
-import {
-  MyRequestsView,
-  TransfersView,
-  NonFoodView,
-  AccountingView,
-  IntegrationsView,
-  HistoryView,
-  StockChecksView,
-} from './components/OperationsTabs'
+import React, { useState, useEffect, useMemo } from 'react'
+import { INITIAL_STATE, BRANCHES, CURATED_CATALOG } from './data/seedData'
 
-const STORAGE_KEY = 'lc_purchasing_v2_2_state_r3'
+const STORAGE_KEY = 'lc_wa_purchasing_v3'
+
+const SIMPLE_ROLES = [
+  { id: 'staff', labelEn: 'Kitchen / Bar', labelAr: 'المطبخ / البار', tabs: ['daily'] },
+  { id: 'manager', labelEn: 'Restaurant Manager', labelAr: 'مدير المطعم', tabs: ['periodic', 'daily', 'shortages'] },
+  { id: 'cost_control', labelEn: 'Cost Control', labelAr: 'مراقبة التكاليف', tabs: ['daily', 'periodic', 'history', 'shortages'] },
+  { id: 'owner', labelEn: 'Owner · Lyudmyla', labelAr: 'المالكة · ليودميلا', tabs: ['periodic', 'history', 'shortages'] },
+]
 
 function loadState() {
   try {
@@ -56,566 +25,119 @@ function loadState() {
 
 export default function App() {
   const [state, setState] = useState(loadState)
+  const [branchId, setBranchId] = useState('boho')
   const [roleId, setRoleId] = useState('owner')
-  const [branchFilter, setBranchFilter] = useState('boho')
   const [lang, setLang] = useState('en')
-  const [activeTab, setActiveTab] = useState('overview')
-  const [navHistory, setNavHistory] = useState([])
-  const [focusedLineId, setFocusedLineId] = useState(null)
-  const [prefillOrderQty, setPrefillOrderQty] = useState(null)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState('periodic')
   const [toast, setToast] = useState(null)
 
-  const role = ROLES.find((r) => r.id === roleId) || ROLES[0]
-  const t = LABELS[lang]
+  const role = SIMPLE_ROLES.find((r) => r.id === roleId) || SIMPLE_ROLES[0]
+  const branch = BRANCHES.find((b) => b.id === branchId) || BRANCHES[0]
+  const branchTitle = lang === 'ar' ? branch.nameAr : branch.name
+  const isAr = lang === 'ar'
 
   useEffect(() => {
-    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr'
-    document.documentElement.lang = lang
-  }, [lang])
+    document.documentElement.dir = isAr ? 'rtl' : 'ltr'
+    document.documentElement.lang = isAr ? 'ar' : 'en'
+  }, [isAr])
 
   useEffect(() => {
     try {
       const { posterSnapshot, ...rest } = state
       localStorage.setItem(STORAGE_KEY, JSON.stringify(rest))
     } catch (e) {
-      // ignore quota errors
+      // ignore
     }
   }, [state])
 
+  useEffect(() => {
+    if (!role.tabs.includes(activeTab)) {
+      setActiveTab(role.tabs[0])
+    }
+  }, [roleId, role.tabs, activeTab])
+
   const notify = (msg) => {
     setToast(msg)
-    setTimeout(() => setToast(null), 3500)
+    setTimeout(() => setToast(null), 3200)
   }
 
-  const nowStr = () => {
-    const d = new Date()
-    return d.toISOString().slice(0, 16).replace('T', ' ')
-  }
-
-  const appendAudit = (prev, branchId, action, rev = 'v1') => [
-    {
-      id: `AUD-${Date.now()}`,
-      time: nowStr(),
-      actor: role.actorName,
-      role: role.id,
-      branchId,
-      action,
-      rev,
-    },
-    ...prev.auditLog,
-  ]
-
-  useEffect(() => {
-    const onPopState = (e) => {
-      if (e.state && e.state.tab) {
-        setActiveTab(e.state.tab)
-        setFocusedLineId(e.state.lineId || null)
-        setNavHistory((prev) => prev.slice(0, -1))
-      }
-    }
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [])
-
-  const handleNavigate = (tab, lineId = null) => {
-    if (tab !== activeTab) {
-      setNavHistory((prev) => [...prev, { tab: activeTab, lineId: focusedLineId }])
-      window.history.pushState({ tab, lineId }, '', `#${tab}`)
-    }
-    setActiveTab(tab)
-    setFocusedLineId(lineId || null)
-    setSidebarOpen(false)
-  }
-
-  const handleBack = () => {
-    if (navHistory.length === 0) return
-    const prev = navHistory[navHistory.length - 1]
-    setNavHistory((h) => h.slice(0, -1))
-    setActiveTab(prev.tab)
-    setFocusedLineId(prev.lineId || null)
-    setSidebarOpen(false)
-  }
-
-  const handleRoleChange = (newRoleId) => {
-    const nextRole = ROLES.find((r) => r.id === newRoleId) || ROLES[0]
-    setRoleId(newRoleId)
-    setNavHistory([])
-    setActiveTab(nextRole.defaultTab)
-    setFocusedLineId(null)
-    window.history.replaceState({ tab: nextRole.defaultTab, lineId: null }, '', `#${nextRole.defaultTab}`)
-  }
-
-  const handleResetDemo = () => {
-    localStorage.removeItem(STORAGE_KEY)
-    setState(INITIAL_STATE)
-    notify('Demo state reset to live Poster snapshot')
-  }
-
-  // Workflow handlers
-  const handleSaveStockCheck = ({ branchId, item, countedQty, diff }) => {
-    setState((prev) => ({
-      ...prev,
-      stockChecks: [
-        {
-          id: `CHK-${Date.now().toString().slice(-4)}`,
-          branchId,
-          itemId: item.id,
-          itemName: item.name,
-          posterStock: item.stock,
-          countedQty,
-          diff,
-          unit: item.unit,
-          countedBy: role.actorName,
-          countedAt: nowStr(),
-          assignedTo: 'Restaurant manager',
-          status: diff === 0 ? 'Matched' : 'Open',
-        },
-        ...prev.stockChecks,
-      ],
-      auditLog: appendAudit(
-        prev,
-        branchId,
-        `Physical count for ${item.name}: Poster ${item.stock} ${item.unit}, Counted ${countedQty} ${item.unit} (Diff: ${diff})`
-      ),
-    }))
-    notify(`Count saved for ${item.name} (Poster stock unchanged)`)
-  }
-
-  const handleSubmitPR = ({ branchId, neededBy, priority, reason, lines }) => {
-    const prId = `PR-${1043 + state.prs.length}`
-    const newPR = {
-      id: prId,
-      branchId,
-      requester: role.actorName,
-      neededBy,
-      priority,
-      reason,
-      createdAt: nowStr(),
-      lines: lines.map((l, idx) => ({
-        lineId: `${prId}-${idx + 1}`,
-        itemId: l.id,
-        itemName: l.name,
-        itemNameAr: l.nameAr || l.name,
-        category: l.category || 'Food',
-        emoji: l.emoji || '📦',
-        qty: l.qty,
-        unit: l.unit,
-        lastPaid: l.lastPaid || 0,
-        ceiling: l.ceiling || l.lastPaid || 0,
-        stage: role.canApproveNeed ? 'Need approved' : 'Need review',
-        owner: role.canApproveNeed ? 'Mona' : 'Restaurant manager',
-        due: 'Today 17:00',
-        selectedSupplier: l.defaultSupplier || 'Approved Supplier',
-        proposedPrice: l.lastPaid || 0,
-        quotes: l.lastPaid
-          ? [{ supplier: l.defaultSupplier || 'Approved Supplier', price: l.lastPaid, delivery: 'Included', taxBasis: 'Excluding tax', date: 'Today', pdf: 'ref.pdf' }]
-          : [],
-        needApproved: role.canApproveNeed,
-        priceApproved: false,
-        revision: 1,
+  // Poster-linked stock lookup for the selected restaurant
+  const stockOptions = useMemo(() => {
+    const posterItems = state.posterSnapshot?.branches?.[branchId]?.items || []
+    return [
+      ...CURATED_CATALOG.map((c) => ({
+        name: c.name,
+        nameAr: c.nameAr,
+        stock: c.posterStock[branchId] ?? 0,
+        unit: c.unit,
+        price: c.lastPaidPoster || 0,
       })),
+      ...posterItems.slice(0, 60).map((p) => ({
+        name: p.name,
+        nameAr: p.name,
+        stock: p.poster_stock,
+        unit: p.unit,
+        price: p.prime_cost || 0,
+      })),
+    ]
+  }, [state.posterSnapshot, branchId])
+
+  const findStock = (name) => {
+    const q = (name || '').trim().toLowerCase()
+    if (!q) return '—'
+    const found = stockOptions.find((s) => s.name.toLowerCase() === q || s.nameAr === name.trim())
+    return found ? `${found.stock} ${found.unit}` : '0 (Not in Poster)'
+  }
+
+  // ============ DAILY STATE ============
+  const [dailyPhones, setDailyPhones] = useState(() => ({
+    manager: localStorage.getItem('lc_daily_ph_mgr') || '',
+    office: localStorage.getItem('lc_daily_ph_office') || '',
+    costMgr: localStorage.getItem('lc_daily_ph_cost') || '',
+  }))
+  const [dailyDate, setDailyDate] = useState('2026-11-22')
+  const [dailyDept, setDailyDept] = useState('Kitchen')
+  const [dailyRequester, setDailyRequester] = useState('Kitchen / Bar Lead')
+  const [dailyRows, setDailyRows] = useState([
+    { name: 'Tomatoes', qty: '10', notes: 'Fresh' },
+    { name: 'Chicken breast', qty: '8', notes: 'Boneless' },
+  ])
+
+  const saveDailyPhones = () => {
+    localStorage.setItem('lc_daily_ph_mgr', dailyPhones.manager)
+    localStorage.setItem('lc_daily_ph_office', dailyPhones.office)
+    localStorage.setItem('lc_daily_ph_cost', dailyPhones.costMgr)
+    notify(isAr ? '✅ تم حفظ أرقام اليومي' : '✅ Daily WhatsApp numbers saved')
+  }
+
+  const clearDailyPhones = () => {
+    setDailyPhones({ manager: '', office: '', costMgr: '' })
+    localStorage.removeItem('lc_daily_ph_mgr')
+    localStorage.removeItem('lc_daily_ph_office')
+    localStorage.removeItem('lc_daily_ph_cost')
+    notify(isAr ? '🗑️ تم مسح أرقام اليومي' : '🗑️ Daily numbers cleared')
+  }
+
+  const sendWhatsApp = (phone, msg) => {
+    const clean = (phone || '').replace(/[^0-9]/g, '')
+    if (!clean) {
+      alert(isAr ? 'اكتب رقم الواتساب الأول واضغط حفظ' : 'Please enter and save the WhatsApp number first.')
+      return
     }
-
-    setState((prev) => ({
-      ...prev,
-      prs: [newPR, ...prev.prs],
-      auditLog: appendAudit(prev, branchId, `${prId} submitted (${lines.length} lines, Priority: ${priority})`),
-    }))
-    notify(`${prId} submitted for review`)
+    window.open(`https://wa.me/${clean}?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
-  const handleApproveNeed = (prId, lineId) => {
-    setState((prev) => ({
-      ...prev,
-      prs: prev.prs.map((pr) =>
-        pr.id !== prId
-          ? pr
-          : {
-              ...pr,
-              lines: pr.lines.map((l) =>
-                l.lineId === lineId ? { ...l, needApproved: true, stage: 'Need approved', owner: 'Mona' } : l
-              ),
-            }
-      ),
-      auditLog: appendAudit(prev, 'boho', `${prId} line ${lineId} need-approved`),
-    }))
-    notify('Line need approved & routed to Purchasing')
-  }
-
-  const handleSendQuoteToCostControl = (prId, lineId, { supplier, price }) => {
-    setState((prev) => ({
-      ...prev,
-      prs: prev.prs.map((pr) =>
-        pr.id !== prId
-          ? pr
-          : {
-              ...pr,
-              lines: pr.lines.map((l) => {
-                if (l.lineId !== lineId) return l
-                const withinCeiling = l.ceiling > 0 && price <= l.ceiling && price * l.qty <= 10000
-                return {
-                  ...l,
-                  selectedSupplier: supplier,
-                  proposedPrice: price,
-                  quotes: [
-                    { supplier, price, delivery: 'Included', taxBasis: 'Excluding tax', date: 'Today', pdf: 'quote-new.pdf' },
-                    ...(l.quotes || []).filter((q) => q.supplier !== supplier),
-                  ],
-                  priceApproved: withinCeiling,
-                  stage: withinCeiling ? 'Approved' : 'Price review',
-                  owner: withinCeiling ? 'Mona' : 'Cost Control',
-                }
-              }),
-            }
-      ),
-      auditLog: appendAudit(prev, 'all', `${prId} quote submitted (${supplier} @ EGP ${price})`),
-    }))
-    notify('Quote submitted')
-  }
-
-  const handleApprovePrice = (prId, lineId, { supplier, price, reason }) => {
-    setState((prev) => ({
-      ...prev,
-      prs: prev.prs.map((pr) =>
-        pr.id !== prId
-          ? pr
-          : {
-              ...pr,
-              lines: pr.lines.map((l) =>
-                l.lineId === lineId
-                  ? {
-                      ...l,
-                      selectedSupplier: supplier,
-                      proposedPrice: price,
-                      priceApproved: true,
-                      escalatedToOwner: false,
-                      stage: 'Approved',
-                      owner: 'Mona',
-                    }
-                  : l
-              ),
-            }
-      ),
-      auditLog: appendAudit(prev, 'all', `${prId} price approved (${supplier} @ EGP ${price}). Note: ${reason}`),
-    }))
-    notify('Price approved — ready to create PO')
-  }
-
-  const handleReturnPrice = (prId, lineId, reason) => {
-    setState((prev) => ({
-      ...prev,
-      prs: prev.prs.map((pr) =>
-        pr.id !== prId
-          ? pr
-          : {
-              ...pr,
-              lines: pr.lines.map((l) =>
-                l.lineId === lineId ? { ...l, stage: 'Returned', owner: 'Mona', priceApproved: false } : l
-              ),
-            }
-      ),
-      auditLog: appendAudit(prev, 'all', `${prId} returned to Purchasing: ${reason}`),
-    }))
-    notify('Returned to Purchasing')
-  }
-
-  const handleRejectPrice = (prId, lineId, reason) => {
-    setState((prev) => ({
-      ...prev,
-      prs: prev.prs.map((pr) =>
-        pr.id !== prId
-          ? pr
-          : {
-              ...pr,
-              lines: pr.lines.map((l) =>
-                l.lineId === lineId ? { ...l, stage: 'Rejected', owner: 'Closed', priceApproved: false } : l
-              ),
-            }
-      ),
-      auditLog: appendAudit(prev, 'all', `${prId} rejected: ${reason}`),
-    }))
-    notify('Line rejected')
-  }
-
-  const handleApproveOwnerLine = (prId, lineId) => {
-    setState((prev) => ({
-      ...prev,
-      prs: prev.prs.map((pr) =>
-        pr.id !== prId
-          ? pr
-          : {
-              ...pr,
-              lines: pr.lines.map((l) =>
-                l.lineId === lineId
-                  ? { ...l, priceApproved: true, escalatedToOwner: false, stage: 'Approved', owner: 'Mona' }
-                  : l
-              ),
-            }
-      ),
-      auditLog: appendAudit(prev, 'all', `Owner approved escalated spend for ${prId}`),
-    }))
-    notify('Escalated spend approved by Owner')
-  }
-
-  const handleCreatePO = (line) => {
-    const poId = `PO-${2062 + state.pos.length}`
-    const newPo = {
-      id: poId,
-      prId: line.prId,
-      branchId: line.branchId,
-      supplier: line.selectedSupplier || 'Approved Supplier',
-      category: line.category || 'Food',
-      itemId: line.itemId,
-      itemName: line.itemName,
-      itemNameAr: line.itemNameAr,
-      spec: `Unit: ${line.unit}`,
-      emoji: line.emoji,
-      orderedQty: line.qty,
-      receivedQty: 0,
-      unit: line.unit,
-      approvedPrice: line.proposedPrice,
-      invoiceAmount: line.qty * line.proposedPrice,
-      expectedDate: line.neededBy || '2026-11-22',
-      revision: 1,
-      status: 'Not sent',
-      postingStatus: 'Pending validation',
-    }
-    setState((prev) => ({
-      ...prev,
-      pos: [newPo, ...prev.pos],
-      prs: prev.prs.map((pr) =>
-        pr.id !== line.prId
-          ? pr
-          : {
-              ...pr,
-              lines: pr.lines.map((l) => (l.lineId === line.lineId ? { ...l, stage: 'PO Created' } : l)),
-            }
-      ),
-      auditLog: appendAudit(prev, line.branchId, `Created ${poId} from ${line.prId} (${newPo.supplier})`),
-    }))
-    notify(`${poId} created`)
-    return newPo
-  }
-
-  const handleUpdatePOStatus = (poId, status) => {
-    setState((prev) => ({
-      ...prev,
-      pos: prev.pos.map((p) => (p.id === poId ? { ...p, status, sentAt: nowStr() } : p)),
-      auditLog: appendAudit(prev, 'all', `${poId} marked ${status}`),
-    }))
-    notify(`${poId} marked ${status}`)
-  }
-
-  const handleConfirmReceipt = (poId, { acceptedQty, stillDue, unmatchedEgp, deliveryNoteNo, missingAction, techAccepted, receiptSummary }) => {
-    setState((prev) => {
-      const targetPo = prev.pos.find((p) => p.id === poId)
-      const newReceived = Number(((targetPo?.receivedQty || 0) + acceptedQty).toFixed(3))
-      const fully = newReceived >= (targetPo?.orderedQty || 0)
-      const nextDiscrepancies =
-        stillDue > 0
-          ? [
-              {
-                id: `ISS-${402 + prev.discrepancies.length}`,
-                branchId: targetPo.branchId,
-                type: 'Shortage',
-                refDoc: poId,
-                itemName: targetPo.itemName,
-                expectedQty: targetPo.orderedQty,
-                actualQty: newReceived,
-                unit: targetPo.unit,
-                unmatchedEgp,
-                owner: 'Mona · Purchasing',
-                due: 'Tomorrow 10:00',
-                nextAction: missingAction,
-                status: 'Open',
-              },
-              ...prev.discrepancies,
-            ]
-          : prev.discrepancies
-
-      return {
-        ...prev,
-        pos: prev.pos.map((p) =>
-          p.id !== poId
-            ? p
-            : {
-                ...p,
-                receivedQty: newReceived,
-                status: !techAccepted ? 'On hold (Tech)' : fully ? 'Received' : 'Part received',
-                postingStatus: 'Pending authorized review',
-                lastReceiptNote: receiptSummary || `DN ${deliveryNoteNo} · Accepted ${acceptedQty} ${targetPo.unit}`,
-              }
-        ),
-        discrepancies: nextDiscrepancies,
-        auditLog: appendAudit(
-          prev,
-          targetPo.branchId,
-          `Receipt on ${poId}: accepted ${acceptedQty} ${targetPo.unit} (DN: ${deliveryNoteNo}). Still due: ${stillDue} ${targetPo.unit}`
-        ),
-      }
-    })
-    notify(`Receipt saved & sent to Purchasing for ${poId}`)
-  }
-
-  const handleResolveDiscrepancy = (issueId, { outcome, docRef, note }) => {
-    const summary = `${outcome} (Ref: ${docRef}) — ${note}`
-    const nextStatus = outcome === 'Later delivery scheduled' ? 'Awaiting supplier' : 'Closed'
-    setState((prev) => ({
-      ...prev,
-      discrepancies: prev.discrepancies.map((d) =>
-        d.id === issueId ? { ...d, status: nextStatus, nextAction: summary } : d
-      ),
-      auditLog: appendAudit(prev, 'all', `${issueId} updated by Purchasing [${nextStatus}]: ${summary}`),
-    }))
-    notify(`${issueId} -> ${nextStatus}`)
-  }
-
-  const handleCreateTransfer = ({ sourceBranchId, destBranchId, type, itemName, qty, unit }) => {
-    const trfId = `TRF-${303 + state.transfers.length}`
-    setState((prev) => ({
-      ...prev,
-      transfers: [
-        {
-          id: trfId,
-          type,
-          sourceBranchId,
-          destBranchId,
-          itemName,
-          emoji: '📦',
-          dispatchedQty: qty,
-          receivedQty: 0,
-          unit,
-          returnDueDate: type === 'Loan' ? '2026-11-25' : null,
-          owner: role.actorName,
-          status: 'Dispatched',
-          notes: 'Dispatched from source custodian',
-        },
-        ...prev.transfers,
-      ],
-      auditLog: appendAudit(prev, sourceBranchId, `${trfId} dispatched ${qty} ${unit} ${itemName} -> ${destBranchId}`),
-    }))
-    notify(`${trfId} dispatched`)
-  }
-
-  const handleAcceptTransfer = (trfId) => {
-    setState((prev) => ({
-      ...prev,
-      transfers: prev.transfers.map((tr) =>
-        tr.id === trfId ? { ...tr, receivedQty: tr.dispatchedQty, status: 'Received' } : tr
-      ),
-      auditLog: appendAudit(prev, 'all', `${trfId} destination arrival confirmed`),
-    }))
-    notify(`${trfId} arrival confirmed`)
-  }
-
-  const handleMarkPosted = (poId) => {
-    const supplyId = `SUP-${Math.floor(90500 + Math.random() * 900)}`
-    setState((prev) => ({
-      ...prev,
-      pos: prev.pos.map((p) =>
-        p.id === poId ? { ...p, postingStatus: 'Posted', posterSupplyId: supplyId } : p
-      ),
-      auditLog: appendAudit(prev, 'all', `${poId} reconciled to Poster Supply ID ${supplyId}`),
-    }))
-    notify(`${poId} reconciled (${supplyId})`)
-  }
-
-  const handleRequestReport = (prId, branchId, note) => {
-    setState((prev) => ({
-      ...prev,
-      discrepancies: [
-        {
-          id: `RPT-${410 + prev.discrepancies.length}`,
-          branchId,
-          type: 'Owner Report Request',
-          refDoc: prId,
-          itemName: `${prId} Verification`,
-          expectedQty: 0,
-          actualQty: 0,
-          unit: '',
-          unmatchedEgp: 0,
-          owner: 'Noman · Cost Control',
-          due: 'Today 18:00',
-          nextAction: note,
-          status: 'Open',
-        },
-        ...prev.discrepancies,
-      ],
-      auditLog: appendAudit(prev, branchId, `Owner requested report on ${prId}: ${note}`),
-    }))
-    notify(`Report request sent to Noman & Cost Control for ${prId}`)
-  }
-
-  const handleResolveCheck = (checkId) => {
-    setState((prev) => ({
-      ...prev,
-      stockChecks: prev.stockChecks.map((c) => (c.id === checkId ? { ...c, status: 'Resolved' } : c)),
-      auditLog: appendAudit(prev, 'all', `Stock check ${checkId} reviewed and resolved`),
-    }))
-    notify(`Stock check ${checkId} marked resolved`)
-  }
-
-  const handleAskForUpdate = (orderId, itemName) => {
-    setState((prev) => ({
-      ...prev,
-      auditLog: appendAudit(prev, branchFilter, `Update requested from Mohamed Noman on ${orderId} (${itemName})`),
-    }))
-    notify(`Update request sent to Mohamed Noman for ${itemName}`)
-  }
-
-  const handleApproveFoodBatch = (prId, lineIds) => {
-    setState((prev) => ({
-      ...prev,
-      prs: prev.prs.map((pr) =>
-        pr.id !== prId
-          ? pr
-          : {
-              ...pr,
-              lines: pr.lines.map((l) =>
-                lineIds.includes(l.lineId)
-                  ? { ...l, needApproved: true, stage: 'Need approved', owner: 'Mona' }
-                  : l
-              ),
-            }
-      ),
-      auditLog: appendAudit(prev, branchFilter, `${prId}: Approved ${lineIds.length} food line(s) & sent to Purchasing (WF02)`),
-    }))
-    notify(`Approved ${lineIds.length} food item(s) — sent to Purchasing`)
-  }
-
-  const handleReturnPRForClarification = (prId, note) => {
-    setState((prev) => ({
-      ...prev,
-      prs: prev.prs.map((pr) =>
-        pr.id !== prId
-          ? pr
-          : {
-              ...pr,
-              lines: pr.lines.map((l) =>
-                !l.needApproved ? { ...l, stage: 'Returned for clarification', owner: pr.requester } : l
-              ),
-            }
-      ),
-      auditLog: appendAudit(prev, branchFilter, `${prId} returned for clarification: ${note}`),
-    }))
-    notify(`${prId} returned for clarification`)
-  }
-
-  const handleAddOrderNote = (orderId, noteText) => {
-    setState((prev) => ({
-      ...prev,
-      pos: prev.pos.map((p) =>
-        p.id === orderId
-          ? { ...p, extraNotes: [...(p.extraNotes || []), { time: nowStr(), text: noteText }] }
-          : p
-      ),
-      auditLog: appendAudit(prev, branchFilter, `Note/photo added on ${orderId}: ${noteText}`),
-    }))
-    notify(`Note added to ${orderId}`)
-  }
-
-  const handleSubmitDaily = ({ branchId, date, department, requestedBy, items }) => {
+  const submitDaily = () => {
+    const items = dailyRows
+      .filter((r) => r.name.trim() && Number(r.qty) > 0)
+      .map((r) => ({
+        name: r.name.trim(),
+        stock: findStock(r.name),
+        unit: '',
+        qty: Number(r.qty),
+        notes: r.notes,
+      }))
+    if (items.length === 0) return
     const id = `DR-${202 + state.dailyRequests.length}`
     setState((prev) => ({
       ...prev,
@@ -623,30 +145,72 @@ export default function App() {
         {
           id,
           branchId,
-          date,
-          department,
-          requestedBy,
+          date: dailyDate,
+          department: dailyDept,
+          requestedBy: dailyRequester,
           sentTo: 'Cost Control (WhatsApp)',
           status: 'Sent to Cost Control',
           items,
         },
         ...prev.dailyRequests,
       ],
-      auditLog: appendAudit(prev, branchId, `Daily Request ${id} (${department}) saved with ${items.length} items`),
     }))
-    notify(`Daily Request ${id} saved`)
+    notify(isAr ? `تم حفظ الطلب اليومي ${id}` : `Daily Request ${id} saved to history`)
   }
 
-  const handleSavePeriodic = ({ branchId, id, date, department, items }) => {
-    const newId = id || `PER-00${state.periodicRequests.length + 1}`
+  // ============ PERIODIC STATE ============
+  const [perPhones, setPerPhones] = useState(() => ({
+    manager: localStorage.getItem('lc_per_ph_mgr') || '',
+    cost: localStorage.getItem('lc_per_ph_cost') || '',
+    owner: localStorage.getItem('lc_per_ph_owner') || '',
+  }))
+  const [perReqNo, setPerReqNo] = useState(`PER-00${state.periodicRequests.length + 1}`)
+  const [perDate, setPerDate] = useState('2026-11-22')
+  const [perDept, setPerDept] = useState('Restaurant')
+  const [perRows, setPerRows] = useState([
+    { name: 'Dinner plate 27 cm', specs: 'TW-027 Porcelain', category: 'China', qty: '15', price: '150' },
+    { name: 'Nachos Skillet', specs: 'Cast iron', category: 'Kitchen Tools', qty: '10', price: '320' },
+  ])
+
+  const branchPeriodic = state.periodicRequests.filter((p) => p.branchId === branchId)
+  const [selectedPerId, setSelectedPerId] = useState(branchPeriodic[0]?.id || state.periodicRequests[0]?.id)
+  const activePer = state.periodicRequests.find((p) => p.id === selectedPerId && p.branchId === branchId) || branchPeriodic[0]
+
+  const [stepInputs, setStepInputs] = useState({
+    1: { name: '', sig: '', notes: '' },
+    2: { name: '', sig: '', notes: '' },
+    3: { name: '', sig: '', notes: '' },
+  })
+
+  const savePerPhones = () => {
+    localStorage.setItem('lc_per_ph_mgr', perPhones.manager)
+    localStorage.setItem('lc_per_ph_cost', perPhones.cost)
+    localStorage.setItem('lc_per_ph_owner', perPhones.owner)
+    notify(isAr ? '✅ تم حفظ أرقام الدوري' : '✅ Periodic WhatsApp numbers saved')
+  }
+
+  const clearPerPhones = () => {
+    setPerPhones({ manager: '', cost: '', owner: '' })
+    localStorage.removeItem('lc_per_ph_mgr')
+    localStorage.removeItem('lc_per_ph_cost')
+    localStorage.removeItem('lc_per_ph_owner')
+    notify(isAr ? '🗑️ تم مسح أرقام الدوري' : '🗑️ Periodic numbers cleared')
+  }
+
+  const savePeriodic = () => {
+    const items = perRows
+      .filter((r) => r.name.trim() && Number(r.qty) > 0)
+      .map((r) => ({ ...r, stock: findStock(r.name), qty: Number(r.qty), price: Number(r.price || 0) }))
+    if (items.length === 0) return
+    const newId = perReqNo.trim() || `PER-00${state.periodicRequests.length + 1}`
     setState((prev) => ({
       ...prev,
       periodicRequests: [
         {
           id: newId,
           branchId,
-          date,
-          department,
+          date: perDate,
+          department: perDept,
           status: 'Waiting Restaurant Manager',
           step1: { approved: false, name: '', sig: '', time: '' },
           step2: { approved: false, name: '', sig: '', time: '' },
@@ -655,314 +219,655 @@ export default function App() {
         },
         ...prev.periodicRequests,
       ],
-      auditLog: appendAudit(prev, branchId, `Periodic Request ${newId} created (${items.length} items)`),
     }))
-    notify(`Periodic Request ${newId} saved`)
-    return newId
+    setSelectedPerId(newId)
+    notify(isAr ? `تم حفظ طلب الدوري ${newId}` : `Periodic Request ${newId} saved`)
   }
 
-  const handleApprovePeriodicStep = (perId, stepNum, name, sig) => {
-    const time = nowStr().slice(11, 16)
+  const approvePeriodicStep = (stepNum) => {
+    if (!activePer) return
+    const inp = stepInputs[stepNum]
+    if (!inp.name.trim() || !inp.sig.trim()) {
+      alert(isAr ? 'اكتب الاسم والتوقيع الأول' : 'Please enter Name and Signature first.')
+      return
+    }
+    const time = new Date().toTimeString().slice(0, 5)
     setState((prev) => ({
       ...prev,
       periodicRequests: prev.periodicRequests.map((p) => {
-        if (p.id !== perId) return p
+        if (p.id !== activePer.id) return p
         const next = { ...p }
         if (stepNum === 1) {
-          next.step1 = { approved: true, name, sig, time }
+          next.step1 = { approved: true, name: inp.name.trim(), sig: inp.sig.trim(), notes: inp.notes, time }
           next.status = 'Waiting Cost Control'
         } else if (stepNum === 2) {
-          next.step2 = { approved: true, name, sig, time }
+          next.step2 = { approved: true, name: inp.name.trim(), sig: inp.sig.trim(), notes: inp.notes, time }
           next.status = 'Waiting Owner Final Approval'
         } else if (stepNum === 3) {
-          next.step3 = { approved: true, name, sig, time }
+          next.step3 = { approved: true, name: inp.name.trim(), sig: inp.sig.trim(), notes: inp.notes, time }
           next.status = 'Fully Approved'
         }
         return next
       }),
-      auditLog: appendAudit(prev, branchFilter, `Periodic ${perId} Step ${stepNum} approved by ${name}`),
     }))
-    notify(`Step ${stepNum} approved for ${perId}`)
+    notify(isAr ? `✅ تم اعتماد المرحلة ${stepNum}` : `✅ Step ${stepNum} approved`)
   }
 
-  const allNavItems = [
-    { id: 'overview', label: t.overview, icon: Home },
-    { id: 'daily_periodic', label: role.id === 'staff' ? (lang === 'ar' ? 'طلب يومي (Daily)' : 'Daily Request') : role.id === 'owner' ? (lang === 'ar' ? 'سجل اليومي والدوري' : 'Daily & Periodic') : (lang === 'ar' ? 'يومي ودوري' : 'Daily & Periodic'), icon: MessageSquare },
-    { id: 'shortages', label: lang === 'ar' ? 'النواقص (وصل أقل)' : 'Shortages', icon: AlertTriangle },
-    { id: 'new_request', label: t.newRequest, icon: PlusSquare },
-    { id: 'my_requests', label: role.id === 'owner' ? (lang === 'ar' ? 'الطلبات والأوامر' : 'Requests & Orders') : t.myRequests, icon: FileText },
-    { id: 'purchasing', label: t.purchasing, icon: ShoppingCart },
-    { id: 'price_review', label: t.priceReview, icon: Tag },
-    { id: 'deliveries', label: role.id === 'purchasing' ? (lang === 'ar' ? 'متابعة التوريدات' : 'Delivery tracking') : t.deliveries, icon: Truck },
-    { id: 'stock_checks', label: t.stockChecks, icon: ClipboardList },
-    { id: 'transfers', label: t.transfers, icon: ArrowRightLeft },
-    { id: 'non_food', label: t.nonFood, icon: Layers },
-    { id: 'accounting', label: t.accounting, icon: Calculator },
-    { id: 'integrations', label: t.integrations, icon: Database },
-    { id: 'history', label: t.history, icon: History },
-  ]
-  const navItems = allNavItems.filter((item) => role.navTabs.includes(item.id))
+  // ============ HISTORY & SHORTAGES ============
+  const [historyFilter, setHistoryFilter] = useState('All')
+  const [shortForm, setShortForm] = useState({ refDoc: 'DR-201', itemName: 'Tomatoes', ordered: '10', arrived: '8', unit: 'kg', reason: 'Supplier short delivery' })
+
+  const addShortage = () => {
+    const ord = Number(shortForm.ordered || 0)
+    const arr = Number(shortForm.arrived || 0)
+    if (!shortForm.itemName.trim() || ord <= arr) return
+    const id = `ISS-${402 + state.discrepancies.length}`
+    setState((prev) => ({
+      ...prev,
+      discrepancies: [
+        {
+          id,
+          branchId,
+          type: 'Arrived Less',
+          refDoc: shortForm.refDoc,
+          itemName: shortForm.itemName.trim(),
+          expectedQty: ord,
+          actualQty: arr,
+          unit: shortForm.unit,
+          unmatchedEgp: 0,
+          owner: 'Cost Control / Purchasing',
+          due: 'Tomorrow 10:00',
+          nextAction: shortForm.reason,
+          status: 'Open',
+        },
+        ...prev.discrepancies,
+      ],
+    }))
+    notify(isAr ? `تم تسجيل عجز ${id}` : `Shortage ${id} recorded`)
+  }
+
+  const resolveShortage = (id) => {
+    setState((prev) => ({
+      ...prev,
+      discrepancies: prev.discrepancies.map((d) => (d.id === id ? { ...d, status: 'Closed' } : d)),
+    }))
+    notify(`${id} resolved`)
+  }
+
+  const periodicTotal = perRows.reduce((s, r) => s + Number(r.qty || 0) * Number(r.price || 0), 0)
+  const branchShortages = state.discrepancies.filter((d) => d.branchId === branchId)
 
   return (
-    <div className="app-shell">
-      {/* Sidebar */}
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-brand">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>{t.brand}</span>
+    <div className="wa-container">
+      {/* Dark Green Header */}
+      <header className="wa-header">
+        <h1>طلب شراء للمطاعم | Purchase Request</h1>
+        <p>الاعتماد بيروح واتساب · WhatsApp Approval Flow · Poster Stock Linked</p>
+      </header>
+
+      {/* Compact Top Controls Bar (No Sidebar!) */}
+      <div className="wa-controls-bar">
+        <div className="wa-control-group">
+          <div className="wa-pill-select">
+            <span>🏪 {isAr ? 'المطعم:' : 'Restaurant:'}</span>
+            <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+              {BRANCHES.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {isAr ? b.nameAr : b.name}
+                </option>
+              ))}
+            </select>
           </div>
-          <span style={{ fontSize: 11.5, fontWeight: 500, color: 'rgba(255,255,255,0.72)' }}>{t.brandSub}</span>
+
+          <div className="wa-pill-select">
+            <span>👤 {isAr ? 'الدور:' : 'Role:'}</span>
+            <select value={roleId} onChange={(e) => setRoleId(e.target.value)}>
+              {SIMPLE_ROLES.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {isAr ? r.labelAr : r.labelEn}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <nav className="sidebar-nav">
-          {navItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <button
-                key={item.id}
-                className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
-                onClick={() => handleNavigate(item.id)}
-              >
-                <Icon size={18} />
-                <span>{item.label}</span>
-              </button>
-            )
-          })}
-        </nav>
-        <div className="sidebar-footer">
-          <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: 3 }}>
-            {lang === 'ar' ? role.labelAr : role.labelEn}
-          </div>
-          <div>{lang === 'ar' ? role.scopeNoteAr : role.scopeNoteEn}</div>
+
+        <div className="wa-control-group">
+          <button className={`wa-lang-btn ${lang === 'en' ? 'active' : ''}`} onClick={() => setLang('en')}>
+            EN
+          </button>
+          <button className={`wa-lang-btn ${lang === 'ar' ? 'active' : ''}`} onClick={() => setLang('ar')}>
+            مصري
+          </button>
+          <button
+            className="wa-btn ghost"
+            style={{ padding: '6px 10px', fontSize: 12 }}
+            onClick={() => {
+              localStorage.removeItem(STORAGE_KEY)
+              setState(INITIAL_STATE)
+              notify('Reset done')
+            }}
+          >
+            Reset
+          </button>
         </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <div className="main-area">
-        <header className="topbar">
-          <div className="topbar-left">
-            <button className="mobile-menu-btn" onClick={() => setSidebarOpen((v) => !v)}>
-              <Menu size={20} />
-            </button>
-            <div className="select-pill">
-              <Store size={15} color="var(--primary)" />
-              <span>{t.restaurant}:</span>
-              <select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-                {BRANCHES.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {lang === 'ar' ? b.nameAr : b.name} {b.pilot ? '★' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="topbar-right">
-            <div className="lang-toggle">
-              <button className={lang === 'en' ? 'active' : ''} onClick={() => setLang('en')}>EN</button>
-              <button className={lang === 'ar' ? 'active' : ''} onClick={() => setLang('ar')}>مصري</button>
-            </div>
-
-            <div className="role-pill" title="Switch user role">
-              <UserCircle size={15} />
-              <select value={roleId} onChange={(e) => handleRoleChange(e.target.value)}>
-                {ROLES.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {lang === 'ar' ? r.labelAr : r.labelEn}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button className="btn btn-outline" style={{ minHeight: 38 }} onClick={handleResetDemo}>
-              <RotateCcw size={14} /> {t.resetDemo}
-            </button>
-          </div>
-        </header>
-
-        <main className="page-body">
-          {navHistory.length > 0 && (
-            <div style={{ marginBottom: 14 }}>
-              <button className="btn btn-outline" style={{ minHeight: 36, fontSize: 13 }} onClick={handleBack}>
-                ← {lang === 'ar' ? 'رجوع للشاشة اللي فاتت' : 'Back to previous screen'}
-              </button>
-            </div>
-          )}
-          {activeTab === 'overview' && (
-            <OverviewView
-              state={state}
-              branchFilter={branchFilter}
-              role={role}
-              lang={lang}
-              t={t}
-              onNavigate={handleNavigate}
-              onApproveOwnerLine={handleApproveOwnerLine}
-            />
-          )}
-          {activeTab === 'daily_periodic' && (
-            <DailyPeriodicView
-              state={state}
-              branchFilter={branchFilter}
-              role={role}
-              lang={lang}
-              onSubmitDaily={handleSubmitDaily}
-              onSavePeriodic={handleSavePeriodic}
-              onApprovePeriodicStep={handleApprovePeriodicStep}
-            />
-          )}
-          {activeTab === 'shortages' && (
-            <ShortagesView state={state} branchFilter={branchFilter} role={role} lang={lang} />
-          )}
-          {activeTab === 'new_request' && (
-            <NewRequestView
-              state={state}
-              branchFilter={branchFilter}
-              role={role}
-              lang={lang}
-              t={t}
-              prefillOrderQty={prefillOrderQty}
-              onClearPrefill={() => setPrefillOrderQty(null)}
-              onSaveStockCheck={handleSaveStockCheck}
-              onSubmitPR={handleSubmitPR}
-              onNavigate={handleNavigate}
-            />
-          )}
-          {activeTab === 'my_requests' && (
-            <MyRequestsView
-              state={state}
-              branchFilter={branchFilter}
-              role={role}
-              lang={lang}
-              onApproveNeed={handleApproveNeed}
-              onApproveFoodBatch={handleApproveFoodBatch}
-              onReturnPRForClarification={handleReturnPRForClarification}
-              onRequestReport={handleRequestReport}
-              onAskForUpdate={handleAskForUpdate}
-              onAddOrderNote={handleAddOrderNote}
-              onNavigate={handleNavigate}
-            />
-          )}
-          {activeTab === 'purchasing' && (
-            <PurchasingView
-              state={state}
-              branchFilter={branchFilter}
-              role={role}
-              lang={lang}
-              t={t}
-              onSendQuoteToCostControl={handleSendQuoteToCostControl}
-              onCreatePO={handleCreatePO}
-              onUpdatePOStatus={handleUpdatePOStatus}
-              onNavigate={handleNavigate}
-            />
-          )}
-          {activeTab === 'price_review' && (
-            <PriceReviewView
-              state={state}
-              branchFilter={branchFilter}
-              focusedLineId={focusedLineId}
-              role={role}
-              lang={lang}
-              t={t}
-              onApprovePrice={handleApprovePrice}
-              onReturnPrice={handleReturnPrice}
-              onRejectPrice={handleRejectPrice}
-            />
-          )}
-          {activeTab === 'deliveries' && (
-            <ReceivingView
-              state={state}
-              branchFilter={branchFilter}
-              role={role}
-              lang={lang}
-              t={t}
-              onConfirmReceipt={handleConfirmReceipt}
-              onResolveDiscrepancy={handleResolveDiscrepancy}
-            />
-          )}
-          {activeTab === 'transfers' && (
-            <TransfersView
-              state={state}
-              lang={lang}
-              onCreateTransfer={handleCreateTransfer}
-              onAcceptTransfer={handleAcceptTransfer}
-            />
-          )}
-          {activeTab === 'non_food' && (
-            <NonFoodView state={state} branchFilter={branchFilter} lang={lang} />
-          )}
-          {activeTab === 'accounting' && (
-            <AccountingView state={state} role={role} lang={lang} onMarkPosted={handleMarkPosted} />
-          )}
-          {activeTab === 'integrations' && (
-            <IntegrationsView state={state} role={role} />
-          )}
-          {activeTab === 'history' && (
-            <HistoryView state={state} branchFilter={branchFilter} lang={lang} />
-          )}
-          {activeTab === 'stock_checks' && (
-            <StockChecksView
-              state={state}
-              branchFilter={branchFilter}
-              role={role}
-              lang={lang}
-              onResolveCheck={handleResolveCheck}
-              onSaveStockCheck={handleSaveStockCheck}
-              onApplySuggestedOrder={(itemId, qty) => {
-                setPrefillOrderQty({ itemId, qty })
-                handleNavigate('new_request')
-              }}
-              onNavigate={handleNavigate}
-            />
-          )}
-        </main>
-
-        <footer className="bottom-meta">
-          <span>V2.2 PROTOTYPE · L&C RESTAURANT GROUP · BOHO PILOT SCOPE</span>
-          <span className="pill pill-green">
-            <ClipboardList size={13} /> Poster snapshot · {state.posterSnapshot?.fetched_at_utc} (4 accounts)
-          </span>
-        </footer>
       </div>
 
-      {/* Mobile Monobank-style Bottom Nav */}
-      <nav className="mobile-bottom-nav">
-        {navItems.slice(0, 5).map((item) => {
-          const Icon = item.icon
-          return (
-            <button
-              key={item.id}
-              className={`mobile-bottom-btn ${activeTab === item.id ? 'active' : ''}`}
-              onClick={() => handleNavigate(item.id)}
-            >
-              <Icon size={18} />
-              <span>{item.label}</span>
-            </button>
-          )
-        })}
-      </nav>
+      {/* Horizontal Top Tabs */}
+      <div className="wa-tabs">
+        {role.tabs.includes('daily') && (
+          <button className={activeTab === 'daily' ? 'active' : ''} onClick={() => setActiveTab('daily')}>
+            🥬 {isAr ? 'طلب يومي | Daily' : 'Daily Request'}
+            <small>{isAr ? 'خضار - فاكهة - ستوك يومي (Kitchen / Bar / Cost Control)' : 'Kitchen · Bar · Cost Control (No Owner)'}</small>
+          </button>
+        )}
+        {role.tabs.includes('periodic') && (
+          <button className={activeTab === 'periodic' ? 'active' : ''} onClick={() => setActiveTab('periodic')}>
+            🍽️ {isAr ? 'مشتريات دورية | Periodic' : 'Periodic Purchases'}
+            <small>{isAr ? 'China · Glass · Silver · معدات (Manager / Cost Control / Owner)' : 'Manager · Cost Control · Owner'}</small>
+          </button>
+        )}
+        {role.tabs.includes('history') && (
+          <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}>
+            📋 {isAr ? 'سجل اليومي والدوري' : 'Daily & Periodic History'}
+            <small>{isAr ? `كل طلبات ${branchTitle}` : `All orders for ${branchTitle}`}</small>
+          </button>
+        )}
+        {role.tabs.includes('shortages') && (
+          <button className={activeTab === 'shortages' ? 'active' : ''} onClick={() => setActiveTab('shortages')}>
+            ⚠️ {isAr ? 'وصل أقل من المطلوب (النواقص)' : 'Shortages (Arrived Less)'}
+            <small>{branchShortages.filter((s) => s.status !== 'Closed').length} open</small>
+          </button>
+        )}
+      </div>
 
-      {toast && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 22,
-            insetInlineEnd: 22,
-            background: '#0e3a2a',
-            color: '#fff',
-            padding: '11px 16px',
-            borderRadius: 10,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            zIndex: 100,
-            fontSize: 13.5,
-            fontWeight: 600,
-          }}
-        >
-          <CheckCircle2 size={16} />
-          <span>{toast}</span>
-        </div>
-      )}
+      {/* Main Content Body */}
+      <div className="wa-body">
+        {/* ================= TAB 1: DAILY ================= */}
+        {activeTab === 'daily' && (
+          <div>
+            <h2 style={{ marginTop: 0 }}>🥬 {isAr ? `طلب يومي · ${branchTitle}` : `Daily Purchase Request · ${branchTitle}`}</h2>
+
+            <div className="wa-settings">
+              <h3>📱 {isAr ? 'أرقام الطلب اليومي - Daily Only (من غير Owner)' : 'Daily WhatsApp Numbers (No Owner in Daily)'}</h3>
+              <div className="wa-grid">
+                <div className="wa-field">
+                  <label>1. Manager / Executive Chef WhatsApp</label>
+                  <input placeholder="2010xxxxxxxx" value={dailyPhones.manager} onChange={(e) => setDailyPhones((p) => ({ ...p, manager: e.target.value }))} />
+                </div>
+                <div className="wa-field">
+                  <label>2. Cost Control Office WhatsApp</label>
+                  <input placeholder="2010xxxxxxxx" value={dailyPhones.office} onChange={(e) => setDailyPhones((p) => ({ ...p, office: e.target.value }))} />
+                </div>
+                <div className="wa-field">
+                  <label>3. Cost Control Manager WhatsApp</label>
+                  <input placeholder="2010xxxxxxxx" value={dailyPhones.costMgr} onChange={(e) => setDailyPhones((p) => ({ ...p, costMgr: e.target.value }))} />
+                </div>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="wa-btn whatsapp" onClick={saveDailyPhones}>💾 {isAr ? 'حفظ أرقام اليومي' : 'Save Daily Numbers'}</button>
+                <button className="wa-btn ghost" onClick={clearDailyPhones}>🗑️ {isAr ? 'مسح الأرقام' : 'Clear Numbers'}</button>
+              </div>
+            </div>
+
+            <div className="wa-grid">
+              <div className="wa-field">
+                <label>{isAr ? 'التاريخ / Date' : 'Date'}</label>
+                <input type="date" value={dailyDate} onChange={(e) => setDailyDate(e.target.value)} />
+              </div>
+              <div className="wa-field">
+                <label>{isAr ? 'القسم / Department' : 'Department'}</label>
+                <select value={dailyDept} onChange={(e) => setDailyDept(e.target.value)}>
+                  <option value="Kitchen">Kitchen</option>
+                  <option value="Bar">Bar</option>
+                </select>
+              </div>
+              <div className="wa-field">
+                <label>{isAr ? 'اسم الطالب / Requested By' : 'Requested By'}</label>
+                <input value={dailyRequester} onChange={(e) => setDailyRequester(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="wa-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>{isAr ? 'اسم الصنف / Item' : 'Item Name'}</th>
+                    <th>{isAr ? 'الموجود في بوستر / Poster Stock' : 'In Stock (Poster)'}</th>
+                    <th>{isAr ? 'الكمية المطلوبة / Order Qty' : 'Order Qty'}</th>
+                    <th>{isAr ? 'ملاحظات / Notes' : 'Notes'}</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyRows.map((row, idx) => (
+                    <tr key={idx}>
+                      <td>{idx + 1}</td>
+                      <td>
+                        <input
+                          list="poster-stock-datalist"
+                          placeholder="e.g. Tomatoes"
+                          value={row.name}
+                          onChange={(e) => setDailyRows((p) => p.map((r, i) => (i === idx ? { ...r, name: e.target.value } : r)))}
+                        />
+                      </td>
+                      <td>
+                        <span className="wa-badge green">{findStock(row.name)}</span>
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          placeholder="Qty"
+                          value={row.qty}
+                          onChange={(e) => setDailyRows((p) => p.map((r, i) => (i === idx ? { ...r, qty: e.target.value } : r)))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          placeholder="Optional"
+                          value={row.notes}
+                          onChange={(e) => setDailyRows((p) => p.map((r, i) => (i === idx ? { ...r, notes: e.target.value } : r)))}
+                        />
+                      </td>
+                      <td>
+                        <button className="wa-btn ghost" style={{ padding: '6px 10px' }} onClick={() => setDailyRows((p) => p.filter((_, i) => i !== idx))}>✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <datalist id="poster-stock-datalist">
+              {stockOptions.map((s, i) => (
+                <option key={i} value={s.name}>{s.name} (Stock: {s.stock} {s.unit})</option>
+              ))}
+            </datalist>
+
+            <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button className="wa-btn" onClick={() => setDailyRows((p) => [...p, { name: '', qty: '', notes: '' }])}>
+                + {isAr ? 'إضافة صنف' : 'Add Item'}
+              </button>
+              <button className="wa-btn" onClick={submitDaily}>
+                ✅ {isAr ? 'حفظ الطلب في السجل' : 'Save Daily Request'}
+              </button>
+            </div>
+
+            <div className="wa-box">
+              <b>📱 {isAr ? 'ابعت الطلب اليومي واتساب:' : 'Send Daily Request on WhatsApp:'}</b>
+              <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  className="wa-btn whatsapp"
+                  onClick={() => {
+                    const lines = dailyRows
+                      .filter((r) => r.name && r.qty)
+                      .map((r) => `- ${r.name} | Stock: ${findStock(r.name)} | Order: ${r.qty} ${r.notes ? `(${r.notes})` : ''}`)
+                      .join('\n')
+                    sendWhatsApp(dailyPhones.office, `🥬 Daily Request\nRestaurant: ${branchTitle} (${dailyDept})\nBy: ${dailyRequester}\nDate: ${dailyDate}\n\n${lines}`)
+                  }}
+                >
+                  📱 1 - {isAr ? 'ابعت لمكتب Cost Control' : 'Send to Cost Control Office'}
+                </button>
+                <button
+                  className="wa-btn whatsapp"
+                  onClick={() => {
+                    const lines = dailyRows
+                      .filter((r) => r.name && r.qty)
+                      .map((r) => `- ${r.name} | Stock: ${findStock(r.name)} | Order: ${r.qty}`)
+                      .join('\n')
+                    sendWhatsApp(dailyPhones.costMgr, `🥬 Daily Request\nRestaurant: ${branchTitle} (${dailyDept})\nBy: ${dailyRequester}\n\n${lines}`)
+                  }}
+                >
+                  📱 2 - {isAr ? 'ابعت لمدير Cost Control' : 'Send to Cost Control Manager'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= TAB 2: PERIODIC ================= */}
+        {activeTab === 'periodic' && (
+          <div>
+            <h2 style={{ marginTop: 0 }}>
+              🍽️ {isAr ? `مشتريات دورية · ${branchTitle}` : `Periodic Purchases · ${branchTitle}`}
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#666', marginTop: 4 }}>
+                China · Glass · Silver · Kitchen & Bar Tools · Small Equipment · Spare Parts
+              </div>
+            </h2>
+
+            <div className="wa-settings">
+              <h3>📱 {isAr ? 'أرقام الواتساب - الدوري فقط | Periodic Only' : 'Periodic WhatsApp Numbers (Manager, Cost Control, Owner)'}</h3>
+              <div className="wa-grid">
+                <div className="wa-field">
+                  <label>1. Restaurant Manager WhatsApp</label>
+                  <input placeholder="2010xxxxxxxx" value={perPhones.manager} onChange={(e) => setPerPhones((p) => ({ ...p, manager: e.target.value }))} />
+                </div>
+                <div className="wa-field">
+                  <label>2. Cost Control WhatsApp</label>
+                  <input placeholder="2010xxxxxxxx" value={perPhones.cost} onChange={(e) => setPerPhones((p) => ({ ...p, cost: e.target.value }))} />
+                </div>
+                <div className="wa-field">
+                  <label>3. Owner / Lyudmyla WhatsApp</label>
+                  <input placeholder="2010xxxxxxxx" value={perPhones.owner} onChange={(e) => setPerPhones((p) => ({ ...p, owner: e.target.value }))} />
+                </div>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="wa-btn whatsapp" onClick={savePerPhones}>💾 {isAr ? 'حفظ أرقام الدوري' : 'Save Periodic Numbers'}</button>
+                <button className="wa-btn ghost" onClick={clearPerPhones}>🗑️ {isAr ? 'مسح الأرقام' : 'Clear Numbers'}</button>
+              </div>
+            </div>
+
+            {roleId !== 'owner' && (
+              <>
+                <div className="wa-grid">
+                  <div className="wa-field">
+                    <label>Request No.</label>
+                    <input value={perReqNo} onChange={(e) => setPerReqNo(e.target.value)} />
+                  </div>
+                  <div className="wa-field">
+                    <label>Date</label>
+                    <input type="date" value={perDate} onChange={(e) => setPerDate(e.target.value)} />
+                  </div>
+                  <div className="wa-field">
+                    <label>Department</label>
+                    <select value={perDept} onChange={(e) => setPerDept(e.target.value)}>
+                      <option>Restaurant</option>
+                      <option>Kitchen</option>
+                      <option>Bar</option>
+                      <option>Maintenance</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="wa-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th>Specs</th>
+                        <th>Category</th>
+                        <th>In Stock (Poster)</th>
+                        <th>Qty</th>
+                        <th>Price (EGP)</th>
+                        <th>Total</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {perRows.map((row, idx) => (
+                        <tr key={idx}>
+                          <td>
+                            <input
+                              list="poster-stock-datalist"
+                              value={row.name}
+                              onChange={(e) => setPerRows((p) => p.map((r, i) => (i === idx ? { ...r, name: e.target.value } : r)))}
+                            />
+                          </td>
+                          <td>
+                            <input value={row.specs} onChange={(e) => setPerRows((p) => p.map((r, i) => (i === idx ? { ...r, specs: e.target.value } : r)))} />
+                          </td>
+                          <td>
+                            <select value={row.category} onChange={(e) => setPerRows((p) => p.map((r, i) => (i === idx ? { ...r, category: e.target.value } : r)))}>
+                              <option>China</option>
+                              <option>Glass</option>
+                              <option>Silver</option>
+                              <option>Kitchen Tools</option>
+                              <option>Small Equipment</option>
+                              <option>Linen & Textiles</option>
+                              <option>Spare Parts</option>
+                            </select>
+                          </td>
+                          <td><span className="wa-badge green">{findStock(row.name)}</span></td>
+                          <td><input type="number" value={row.qty} onChange={(e) => setPerRows((p) => p.map((r, i) => (i === idx ? { ...r, qty: e.target.value } : r)))} /></td>
+                          <td><input type="number" value={row.price} onChange={(e) => setPerRows((p) => p.map((r, i) => (i === idx ? { ...r, price: e.target.value } : r)))} /></td>
+                          <td><strong>{(Number(row.qty || 0) * Number(row.price || 0)).toLocaleString()}</strong></td>
+                          <td><button className="wa-btn ghost" style={{ padding: '6px 10px' }} onClick={() => setPerRows((p) => p.filter((_, i) => i !== idx))}>✕</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, flexWrap: 'wrap', gap: 10 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="wa-btn" onClick={() => setPerRows((p) => [...p, { name: '', specs: '', category: 'China', qty: '1', price: '0' }])}>
+                      + Add Item
+                    </button>
+                    <button className="wa-btn" onClick={savePeriodic}>
+                      ✅ Save Periodic Request
+                    </button>
+                  </div>
+                  <div className="wa-total">Total: {periodicTotal.toLocaleString()} EGP</div>
+                </div>
+              </>
+            )}
+
+            {/* 3-Step Approval Workflow */}
+            {activePer && (
+              <div style={{ marginTop: 22 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                  <h3 style={{ margin: 0 }}>WhatsApp Approval Workflow — {activePer.id}</h3>
+                  <select className="wa-pill-select" value={activePer.id} onChange={(e) => setSelectedPerId(e.target.value)}>
+                    {branchPeriodic.map((p) => (
+                      <option key={p.id} value={p.id}>{p.id} · {p.status}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ background: '#fff3cd', padding: 12, borderRadius: 10, fontWeight: 700, marginTop: 10 }}>
+                  Status: {activePer.status} · Items: {activePer.items.map((i) => `${i.name} (x${i.qty}, Stock: ${i.stock})`).join(' · ')}
+                </div>
+
+                {[
+                  { num: 1, title: '1 - Restaurant Manager', data: activePer.step1, unlocked: true, canAct: roleId === 'manager', waPhone: perPhones.cost, waLabel: 'Open WhatsApp & Send to Cost Control' },
+                  { num: 2, title: '2 - Cost Control Manager', data: activePer.step2, unlocked: activePer.step1.approved, canAct: roleId === 'cost_control', waPhone: perPhones.owner, waLabel: 'Open WhatsApp & Send to Owner' },
+                  { num: 3, title: '3 - Owner (Lyudmyla)', data: activePer.step3, unlocked: activePer.step2.approved, canAct: roleId === 'owner', waPhone: perPhones.manager, waLabel: 'Send Final Confirmation to Manager' },
+                ].map((st) => (
+                  <div key={st.num} className={`wa-approval ${st.data.approved ? 'approved' : !st.unlocked ? 'locked' : ''}`}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <b>{st.title}</b>
+                      <span className={`wa-badge ${st.data.approved ? 'green' : st.unlocked ? 'amber' : 'gray'}`}>
+                        {st.data.approved ? `✅ Approved - ${st.data.name} (${st.data.time})` : st.unlocked ? 'Pending' : '🔒 Locked'}
+                      </span>
+                    </div>
+
+                    {!st.data.approved && st.unlocked && st.canAct && (
+                      <>
+                        <div className="wa-grid">
+                          <div className="wa-field">
+                            <label>Name</label>
+                            <input placeholder="Your name" value={stepInputs[st.num].name} onChange={(e) => setStepInputs((p) => ({ ...p, [st.num]: { ...p[st.num], name: e.target.value } }))} />
+                          </div>
+                          <div className="wa-field">
+                            <label>Signature</label>
+                            <input placeholder="Type name as signature" value={stepInputs[st.num].sig} onChange={(e) => setStepInputs((p) => ({ ...p, [st.num]: { ...p[st.num], sig: e.target.value } }))} />
+                          </div>
+                          <div className="wa-field">
+                            <label>Notes</label>
+                            <input placeholder="Optional" value={stepInputs[st.num].notes} onChange={(e) => setStepInputs((p) => ({ ...p, [st.num]: { ...p[st.num], notes: e.target.value } }))} />
+                          </div>
+                        </div>
+                        <div style={{ marginTop: 10 }}>
+                          <button className="wa-btn" onClick={() => approvePeriodicStep(st.num)}>✅ Approve</button>
+                        </div>
+                      </>
+                    )}
+
+                    {st.data.approved && (
+                      <div className="wa-box" style={{ marginTop: 8 }}>
+                        <b>✅ Approved — Send on WhatsApp:</b><br /><br />
+                        <button
+                          className="wa-btn whatsapp"
+                          onClick={() =>
+                            sendWhatsApp(
+                              st.waPhone,
+                              `🍽️ Periodic Request ${activePer.id} (${branchTitle})\nApproved by ${st.data.name}\nItems: ${activePer.items.map((i) => `${i.name} x${i.qty}`).join(', ')}`
+                            )
+                          }
+                        >
+                          📱 {st.waLabel}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================= TAB 3: DAILY & PERIODIC HISTORY ================= */}
+        {activeTab === 'history' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <h2 style={{ margin: 0 }}>📋 {isAr ? `سجل اليومي والدوري · ${branchTitle}` : `Daily & Periodic History · ${branchTitle}`}</h2>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {['All', 'Daily', 'Periodic'].map((f) => (
+                  <button
+                    key={f}
+                    className={`wa-lang-btn ${historyFilter === f ? 'active' : ''}`}
+                    onClick={() => setHistoryFilter(f)}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="wa-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>ID / Date</th>
+                    <th>Department</th>
+                    <th>Items Ordered (with Poster Stock)</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ...(historyFilter !== 'Periodic'
+                      ? state.dailyRequests
+                          .filter((d) => d.branchId === branchId)
+                          .map((d) => ({
+                            type: 'Daily',
+                            id: d.id,
+                            date: d.date,
+                            dept: `${d.department} (${d.requestedBy})`,
+                            items: d.items.map((i) => `${i.name}: ${i.qty} (Stock: ${i.stock})`).join(' · '),
+                            status: d.status,
+                          }))
+                      : []),
+                    ...(historyFilter !== 'Daily'
+                      ? state.periodicRequests
+                          .filter((p) => p.branchId === branchId)
+                          .map((p) => ({
+                            type: 'Periodic',
+                            id: p.id,
+                            date: p.date,
+                            dept: p.department,
+                            items: p.items.map((i) => `${i.name}: ${i.qty} (Stock: ${i.stock})`).join(' · '),
+                            status: p.status,
+                          }))
+                      : []),
+                  ].map((r) => (
+                    <tr key={r.id}>
+                      <td><span className={`wa-badge ${r.type === 'Daily' ? 'green' : 'amber'}`}>{r.type}</span></td>
+                      <td><strong>{r.id}</strong><div style={{ fontSize: 12, color: '#666' }}>{r.date}</div></td>
+                      <td>{r.dept}</td>
+                      <td>{r.items}</td>
+                      <td><span className={`wa-badge ${r.status.includes('Waiting') ? 'amber' : 'green'}`}>{r.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ================= TAB 4: SHORTAGES (ARRIVED LESS) ================= */}
+        {activeTab === 'shortages' && (
+          <div>
+            <h2 style={{ marginTop: 0 }}>⚠️ {isAr ? `وصل أقل من المطلوب · ${branchTitle}` : `Arrived Less Than Ordered (Shortages) · ${branchTitle}`}</h2>
+
+            {(roleId === 'manager' || roleId === 'cost_control') && (
+              <div className="wa-settings" style={{ background: '#fff9ee', borderColor: '#e8a020' }}>
+                <h3 style={{ color: '#9a4d06' }}>➕ {isAr ? 'تسجيل صنف وصل أقل من المطلوب' : 'Report Item Arrived Less Than Ordered'}</h3>
+                <div className="wa-grid">
+                  <div className="wa-field">
+                    <label>Order #</label>
+                    <input value={shortForm.refDoc} onChange={(e) => setShortForm((p) => ({ ...p, refDoc: e.target.value }))} />
+                  </div>
+                  <div className="wa-field">
+                    <label>Item</label>
+                    <input list="poster-stock-datalist" value={shortForm.itemName} onChange={(e) => setShortForm((p) => ({ ...p, itemName: e.target.value }))} />
+                  </div>
+                  <div className="wa-field">
+                    <label>Ordered Qty</label>
+                    <input type="number" value={shortForm.ordered} onChange={(e) => setShortForm((p) => ({ ...p, ordered: e.target.value }))} />
+                  </div>
+                  <div className="wa-field">
+                    <label>Arrived Qty</label>
+                    <input type="number" value={shortForm.arrived} onChange={(e) => setShortForm((p) => ({ ...p, arrived: e.target.value }))} />
+                  </div>
+                  <div className="wa-field">
+                    <label>Reason / Note</label>
+                    <input value={shortForm.reason} onChange={(e) => setShortForm((p) => ({ ...p, reason: e.target.value }))} />
+                  </div>
+                </div>
+                <button className="wa-btn amber" style={{ marginTop: 10 }} onClick={addShortage}>
+                  Save Shortage
+                </button>
+              </div>
+            )}
+
+            <div className="wa-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID / Order</th>
+                    <th>Item</th>
+                    <th>Ordered</th>
+                    <th>Arrived</th>
+                    <th>Missing</th>
+                    <th>Reason / Action</th>
+                    <th>Status</th>
+                    {roleId !== 'owner' && <th></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {branchShortages.map((s) => {
+                    const missing = Math.max(0, Number((s.expectedQty - s.actualQty).toFixed(3)))
+                    return (
+                      <tr key={s.id}>
+                        <td><strong>{s.id}</strong><div style={{ fontSize: 12, color: '#666' }}>{s.refDoc}</div></td>
+                        <td><strong>{s.itemName}</strong></td>
+                        <td>{s.expectedQty} {s.unit}</td>
+                        <td>{s.actualQty} {s.unit}</td>
+                        <td><span className="wa-badge red">−{missing} {s.unit}</span></td>
+                        <td>{s.nextAction}</td>
+                        <td><span className={`wa-badge ${s.status === 'Closed' ? 'green' : 'amber'}`}>{s.status}</span></td>
+                        {roleId !== 'owner' && (
+                          <td>
+                            {s.status !== 'Closed' && (
+                              <button className="wa-btn" style={{ padding: '6px 10px', fontSize: 12 }} onClick={() => resolveShortage(s.id)}>
+                                Resolve
+                              </button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {toast && <div className="wa-toast">{toast}</div>}
     </div>
   )
 }
